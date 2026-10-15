@@ -1,4 +1,5 @@
 import { UserRepository } from '../repositories/UserRepository.js';
+import { ClassRepository } from '../repositories/ClassRepository.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import {
@@ -67,6 +68,13 @@ export class AuthController {
       };
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
+      // 5b. Lấy lớp chủ nhiệm nếu là GVCN (clean architecture: query qua repository)
+      let className = null;
+      if (user.role === 'GVCN') {
+        const homeroomClass = await ClassRepository.findByHomeroomTeacherId(user.id);
+        className = homeroomClass?.class_name ?? null;
+      }
+
       // 6. Trả kết quả thành công
       return res.status(200).json({
         success: true,
@@ -77,6 +85,7 @@ export class AuthController {
           username: user.username,
           name: user.full_name,
           role: user.role,
+          className,
         },
       });
     } catch (err) {
@@ -99,6 +108,14 @@ export class AuthController {
       if (!user) {
         return res.status(404).json({ success: false, message: 'Tài khoản không tồn tại.' });
       }
+
+      // Lấy lớp chủ nhiệm nếu là GVCN (clean architecture: query qua repository)
+      let className = null;
+      if (user.role === 'GVCN') {
+        const homeroomClass = await ClassRepository.findByHomeroomTeacherId(user.id);
+        className = homeroomClass?.class_name ?? null;
+      }
+
       return res.status(200).json({
         success: true,
         user: {
@@ -106,6 +123,7 @@ export class AuthController {
           username: user.username,
           name: user.full_name,
           role: user.role,
+          className,
         },
       });
     } catch (err) {

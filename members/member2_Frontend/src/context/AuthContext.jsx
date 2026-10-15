@@ -70,6 +70,7 @@ export function AuthProvider({ children }) {
 
   /**
    * Đăng nhập: gọi API thật, lưu token + user vào localStorage.
+   * Sau khi login, gọi thêm /auth/me để lấy user đầy đủ (có className).
    * Throws nếu API trả lỗi (401, 500, network error).
    */
   const login = useCallback(async ({ username, password, role }) => {
@@ -82,9 +83,24 @@ export function AuthProvider({ children }) {
       throw new Error(data?.message || 'Đăng nhập thất bại. Vui lòng thử lại.');
     }
 
+    // Lưu ngay user từ login response
     const newAuth = { user: data.user, token: data.token };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newAuth));
     setAuthState(newAuth);
+
+    // Gọi thêm /auth/me để lấy user đầy đủ (có className) — Option A
+    try {
+      const meData = await apiClient('/auth/me', {
+        headers: { Authorization: `Bearer ${data.token}` },
+      });
+      if (meData?.user) {
+        const fullAuth = { user: meData.user, token: data.token };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(fullAuth));
+        setAuthState(fullAuth);
+      }
+    } catch {
+      // Nếu /auth/me thất bại, vẫn giữ user từ login response (fallback)
+    }
 
     return data;
   }, []);
@@ -97,6 +113,7 @@ export function AuthProvider({ children }) {
     user: authState.user,
     token: authState.token,
     role: authState.user?.role ?? null,
+    className: authState.user?.className ?? null,
     isAuthenticated: !!authState.user && !!authState.token,
     isRestoringSession,
     login,

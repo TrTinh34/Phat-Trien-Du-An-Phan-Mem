@@ -241,6 +241,13 @@ export default function GradebookPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Fix race condition: nếu session restore (/auth/me) hoàn thành SAU mount,
+  // user.className mới có giá trị → cập nhật selectedClass cho GVCN
+  useEffect(() => {
+    if (!isGVCN || !user?.className) return;
+    setSelectedClass(user.className);
+  }, [isGVCN, user?.className]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Fetch grades when class / semester changes ────────────────────────────
   useEffect(() => {
     if (!selectedClass || selectedClass === '__meta__') return;

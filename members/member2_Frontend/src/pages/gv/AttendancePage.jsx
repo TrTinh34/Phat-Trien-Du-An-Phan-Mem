@@ -91,10 +91,12 @@ function SummaryBar({ summary, total }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AttendancePage() {
-  const { role, user } = useAuth();
+  const { role, user, isRestoringSession } = useAuth();
   const isGVCN = role === ROLES.GVCN;
 
   // GVCN: class cố định từ user.className; BGH/khác: chọn từ dropdown
+  // Khởi tạo với giá trị sẵn có ngay lúc mount; useEffect bên dưới sẽ cập nhật
+  // khi /auth/me restore session trả về (fix race condition khi reload trang)
   const [selectedClass, setSelectedClass] = useState(() => isGVCN ? (user?.className ?? '') : '');
   const [selectedDate,  setSelectedDate]  = useState(todayISODate);
 
@@ -105,6 +107,15 @@ export default function AttendancePage() {
   const [isLoadingData,  setIsLoadingData]  = useState(false);
   const [isSaving,       setIsSaving]       = useState(false);
   const [saveMessage,    setSaveMessage]    = useState(null); // { type: 'success'|'error', text: string }
+
+  // Fix race condition: khi session restore (/auth/me) hoàn thành sau mount,
+  // user.className mới có giá trị → cập nhật selectedClass cho GVCN
+  useEffect(() => {
+    if (!isGVCN) return;
+    if (!isRestoringSession && user?.className && !selectedClass) {
+      setSelectedClass(user.className);
+    }
+  }, [isGVCN, isRestoringSession, user?.className]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load danh sách lớp CHỈ cho BGH/GV — GVCN không cần dropdown
   useEffect(() => {

@@ -17,10 +17,18 @@ import { ScheduleController } from './src/controllers/ScheduleController.js';
 import { ReportController } from './src/controllers/ReportController.js';
 import { UserController } from './src/controllers/UserController.js';
 import { CommunicationController } from './src/controllers/CommunicationController.js';
+import { SettingsController } from './src/controllers/SettingsController.js';
 import { authenticateToken } from './src/middleware/authMiddleware.js';
 import { resolveGvcnClass } from './src/middleware/dataAccessMiddleware.js';
 import { forgotPasswordLimiter, resetPasswordLimiter } from './src/middleware/rateLimiters.js';
 dotenv.config();
+
+const requireBGH = (req, res, next) => {
+  if (req.user?.role !== 'BGH') {
+    return res.status(403).json({ success: false, message: 'Chỉ Ban Giám Hiệu mới có quyền thực hiện thao tác này.' });
+  }
+  return next();
+};
 
 const app = express();
 const PORT = process.env.PORT || 8081;
@@ -111,11 +119,15 @@ app.post('/api/reports/bgh/approve',    authenticateToken, ReportController.appr
 app.post('/api/reports/bgh/lock-all',   authenticateToken, ReportController.lockAll);
 
 // User Management Routes (Settings)
-app.get('/api/users',                   authenticateToken, UserController.getUsers);
-app.post('/api/users',                  authenticateToken, UserController.createUser);
-app.put('/api/users/:id',               authenticateToken, UserController.updateUser);
-app.patch('/api/users/:id/deactivate',  authenticateToken, UserController.deactivateUser);
-app.delete('/api/users/:id',            authenticateToken, UserController.deleteUser);
+app.get   ('/api/users',                authenticateToken, requireBGH, UserController.getUsers);
+app.post  ('/api/users',                authenticateToken, requireBGH, UserController.createUser);
+app.put   ('/api/users/:id',            authenticateToken, requireBGH, UserController.updateUser);
+app.patch ('/api/users/:id/deactivate', authenticateToken, requireBGH, UserController.deactivateUser);
+app.delete('/api/users/:id',            authenticateToken, requireBGH, UserController.deleteUser);
+
+// Settings Routes (Permissions - BGH only)
+app.get('/api/settings/permissions', authenticateToken, requireBGH, SettingsController.getPermissions);
+app.put('/api/settings/permissions', authenticateToken, requireBGH, SettingsController.savePermissions);
 
 // Communication Routes (Sổ liên lạc)
 app.get('/api/communication/page-data',    authenticateToken, CommunicationController.getPageData);

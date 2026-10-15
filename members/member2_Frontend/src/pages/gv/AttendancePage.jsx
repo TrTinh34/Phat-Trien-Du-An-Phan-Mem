@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { ROLES } from '../../constants/roles.js';
-import { fetchAttendance, fetchClasses, handleSaveAttendance } from '../../api/stubs.js';
+import { fetchAttendance, fetchClasses, handleSaveAttendance, fetchSchedulePageData, fetchStudents } from '../../api/stubs.js';
 import StatusBadge from '../../components/shared/StatusBadge.jsx';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -9,6 +9,15 @@ import StatusBadge from '../../components/shared/StatusBadge.jsx';
 /** Returns today's date as a yyyy-mm-dd string (value for <input type="date">) */
 function todayISODate() {
   return new Date().toISOString().slice(0, 10);
+}
+
+/** Trả về ngày Thứ Hai (YYYY-MM-DD) của tuần chứa dateStr */
+function getMondayOfWeek(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const day = d.getDay(); // 0=Sun
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -107,6 +116,7 @@ export default function AttendancePage() {
   const [isLoadingData,  setIsLoadingData]  = useState(false);
   const [isSaving,       setIsSaving]       = useState(false);
   const [saveMessage,    setSaveMessage]    = useState(null); // { type: 'success'|'error', text: string }
+  const [noSchedule,     setNoSchedule]     = useState(false);
 
   // Fix race condition: khi session restore (/auth/me) hoàn thành sau mount,
   // user.className mới có giá trị → cập nhật selectedClass cho GVCN
@@ -128,43 +138,89 @@ export default function AttendancePage() {
     });
   }, [isGVCN]);
 
-  // Fetch attendance khi selectedClass hoặc selectedDate thay đổi
+  // Fetch attendance + kiểm tra lịch học khi selectedClass hoặc selectedDate thay đổi
   useEffect(() => {
     if (!selectedClass) return;
     let cancelled = false;
 
     setIsLoadingData(true);
     setSaveMessage(null);
+    setNoSchedule(false);
 
-    fetchAttendance(selectedClass, selectedDate)
-      .then((records) => {
-        if (cancelled) return;
-        if (Array.isArray(records) && records.length > 0) {
-          const students = [];
-          const map = {};
-          for (const r of records) {
-            const id     = r.student_code || r.studentCode || r.id;
-            const name   = r.full_name    || r.fullName    || r.name || '';
-            const status = r.status || 'present';
-            students.push({ id, name });
-            map[id] = status;
+    const weekStart = getMondayOfWeek(selectedDate);
+    // dayOfWeek: 1=Thứ2..5=Thứ6, 0=CN, 6=Thứ7 (không có tiết)
+    const selectedDayObj = new Date(selectedDate + 'T00:00:00');
+    const jsDay = selectedDayObj.getDay(); // 0=Sun..6=Sat
+    // Chuyển sang dayOfWeek theo schema (1=Thứ2..5=Thứ6)
+    const dayOfWeekSchema = jsDay === 0 ? 0 : jsDay; // Sun→0 (không có tiết), Mon→1, ..., Sat→6
+
+    Promise.all([
+      fetchAttendance(selectedClass, selectedDate).catch(() => null),
+      fetchSchedulePageData(selectedClass, weekStart).catch(() => null),
+    ]).then(async ([attendanceRecords, scheduleData]) => {
+      if (cancelled) return;
+
+      // Kiểm tra ngày hôm đó có tiết học không
+      const slots = scheduleData?.slots ?? [];
+      const hasSlotToday = slots.some((s) => Number(s.dayOfWeek) === dayOfWeekSchema);
+
+      if (!hasSlotToday) {
+        // Không có tiết học hôm nay
+        setNoSchedule(true);
+        setClassStudents([]);
+        setAttendanceMap({});
+        setIsLoadingData(false);
+        return;
+      }
+
+      // Có tiết học — xử lý attendance data
+      if (Array.isArray(attendanceRecords) && attendanceRecords.length > 0) {
+        // Đã có dữ liệu điểm danh
+        const students = [];
+        const map = {};
+        for (const r of attendanceRecords) {
+          const id   = r.student_code || r.studentCode || String(r.student_id ?? r.id ?? '');
+          const name = r.student_name || r.full_name   || r.fullName || r.name || '';
+          const status = (r.status || 'present').toLowerCase();
+          if (!id) continue;
+          students.push({ id, name });
+          map[id] = status;
+        }
+        setClassStudents(students);
+        setAttendanceMap(map);
+      } else {
+        // Chưa có dữ liệu điểm danh — lấy danh sách học sinh, set mặc định present
+        try {
+          const studentList = await fetchStudents(selectedClass);
+          if (cancelled) return;
+          if (Array.isArray(studentList) && studentList.length > 0) {
+            const students = studentList.map((r) => ({
+              id:   r.student_code || r.studentCode || String(r.id ?? ''),
+              name: r.full_name    || r.fullName    || r.name || '',
+            })).filter((s) => s.id);
+            const map = {};
+            students.forEach((s) => { map[s.id] = 'present'; });
+            setClassStudents(students);
+            setAttendanceMap(map);
+          } else {
+            setClassStudents([]);
+            setAttendanceMap({});
           }
-          setClassStudents(students);
-          setAttendanceMap(map);
-        } else {
-          setClassStudents([]);
-          setAttendanceMap({});
+        } catch {
+          if (!cancelled) {
+            setClassStudents([]);
+            setAttendanceMap({});
+          }
         }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setClassStudents([]);
-          setAttendanceMap({});
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoadingData(false);
-      });
+      }
+      if (!cancelled) setIsLoadingData(false);
+    }).catch(() => {
+      if (!cancelled) {
+        setClassStudents([]);
+        setAttendanceMap({});
+        setIsLoadingData(false);
+      }
+    });
 
     return () => { cancelled = true; };
   }, [selectedClass, selectedDate]);
@@ -194,13 +250,19 @@ export default function AttendancePage() {
   const handleSave = async () => {
     setIsSaving(true);
     setSaveMessage(null);
+    // Gửi kèm studentCode (= student.id) và studentName để backend có thể upsert
+    const entries = Object.entries(attendanceMap).map(([studentCode, status]) => {
+      const student = classStudents.find((s) => s.id === studentCode);
+      return {
+        studentCode,
+        studentName: student?.name ?? '',
+        status,
+      };
+    });
     const payload = {
       className: selectedClass,
       attDate:   selectedDate,
-      entries:   Object.entries(attendanceMap).map(([studentId, status]) => ({
-        studentId,
-        status,
-      })),
+      entries,
     };
     try {
       await handleSaveAttendance(payload);
@@ -313,6 +375,11 @@ export default function AttendancePage() {
             </span>
             Đang tải...
           </div>
+        ) : noSchedule ? (
+          <div className="px-5 py-10 text-center text-body-md text-[#64748b]">
+            <span className="material-symbols-outlined text-[32px] block mx-auto mb-2 text-[#94a3b8]">event_busy</span>
+            Không có tiết học hôm này — lớp {selectedClass} không có lịch học vào ngày này.
+          </div>
         ) : classStudents.length === 0 ? (
           <div className="px-5 py-10 text-center text-body-md text-[#64748b]">
             Không có dữ liệu điểm danh cho ngày này.
@@ -382,7 +449,7 @@ export default function AttendancePage() {
         <button
           type="button"
           onClick={handleSave}
-          disabled={isSaving || classStudents.length === 0}
+          disabled={isSaving || classStudents.length === 0 || noSchedule}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#004ac6] hover:bg-[#003ea8] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold text-body-md shadow-elevation-2 transition-all"
         >
           {isSaving ? (

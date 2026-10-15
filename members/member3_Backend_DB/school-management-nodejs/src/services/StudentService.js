@@ -2,9 +2,18 @@ import { StudentRepository } from '../repositories/StudentRepository.js';
 import { GradeBookRepository } from '../repositories/GradeBookRepository.js';
 
 export class StudentService {
-  static async getAllStudents(className) {
-    if (className) {
-      return await StudentRepository.findByClassName(className);
+  static async getAllStudents(className, restrictClassName = null) {
+    // GVCN chưa được phân công lớp — từ chối truy cập
+    if (restrictClassName === '__NO_CLASS__') {
+      const err = new Error('GVCN chưa được phân công lớp chủ nhiệm.');
+      err.code = 'GVCN_NOT_ASSIGNED';
+      throw err;
+    }
+    // restrictClassName: lớp bắt buộc phải lọc theo (dùng cho GVCN)
+    // Nếu có restrict thì ưu tiên restrict, bỏ qua className từ query param
+    const effectiveClass = restrictClassName ?? className ?? null;
+    if (effectiveClass) {
+      return await StudentRepository.findByClassName(effectiveClass);
     }
     return await StudentRepository.findAll();
   }

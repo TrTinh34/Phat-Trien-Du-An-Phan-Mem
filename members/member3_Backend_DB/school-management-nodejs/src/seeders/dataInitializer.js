@@ -1,11 +1,11 @@
 import { UserRepository } from '../repositories/UserRepository.js';
 import { StudentRepository } from '../repositories/StudentRepository.js';
-import { GradeBookRepository } from '../repositories/GradeBookRepository.js';
 import { AttendanceRepository } from '../repositories/AttendanceRepository.js';
 import { LeaveRequestRepository } from '../repositories/LeaveRequestRepository.js';
 import { TuitionRepository } from '../repositories/TuitionRepository.js';
 import { ClassRepository } from '../repositories/ClassRepository.js';
 import { SubjectRepository } from '../repositories/SubjectRepository.js';
+import { querySafe } from '../config/db.js';
 import bcrypt from 'bcryptjs';
 
 export async function seedDemoData() {
@@ -32,6 +32,23 @@ export async function seedDemoData() {
       await ClassRepository.create({ className: '11B1', gradeLevel: 11, gvcnName: 'Hoàng Văn Em' });
     }
 
+    // Backfill homeroom_teacher_id dựa trên username đã xác minh từ seeder
+    // Chỉ cập nhật các hàng homeroom_teacher_id IS NULL → an toàn khi chạy lại
+    const backfillMapping = [
+      { username: 'gvcn.10a1', className: '10A1' },
+    ];
+    for (const { username, className } of backfillMapping) {
+      await querySafe(
+        `UPDATE school_classes
+         SET homeroom_teacher_id = (
+           SELECT id FROM users WHERE username = $1 AND role = 'GVCN' LIMIT 1
+         )
+         WHERE class_name = $2 AND homeroom_teacher_id IS NULL`,
+        [username, className]
+      );
+    }
+    console.log('[SEEDER] homeroom_teacher_id backfill completed.');
+
     // 3. Subjects
     const existingSubjects = await SubjectRepository.findAll();
     if (existingSubjects.length === 0) {
@@ -52,13 +69,9 @@ export async function seedDemoData() {
       await StudentRepository.create({ studentCode: 'HS005', fullName: 'Đặng Thị Giang', gender: 'Nữ', dob: '2008-07-08', className: '10A2', parentName: 'Đặng Văn Nam', parentPhone: '0933445566', gpa: 7.2, academicRank: 'Khá', status: 'ACTIVE' });
     }
 
-    // 5. GradeBooks
-    const existingGrades = await GradeBookRepository.findAll();
-    if (existingGrades.length === 0) {
-      await GradeBookRepository.save({ studentId: 1, studentCode: 'HS001', studentName: 'Nguyễn Thị Ánh', className: '10A1', subjectName: 'Toán', semester: 'HK1', schoolYear: '2024-2025', scoreOral: 9.0, score15m: 8.5, score1Hour: 8.0, scoreMidTerm: 8.5, scoreFinalTerm: 9.0, averageScore: 8.7, gradeLetter: 'Giỏi', status: 'APPROVED' });
-      await GradeBookRepository.save({ studentId: 1, studentCode: 'HS001', studentName: 'Nguyễn Thị Ánh', className: '10A1', subjectName: 'Ngữ văn', semester: 'HK1', schoolYear: '2024-2025', scoreOral: 8.0, score15m: 8.0, score1Hour: 7.5, scoreMidTerm: 8.0, scoreFinalTerm: 8.5, averageScore: 8.1, gradeLetter: 'Giỏi', status: 'APPROVED' });
-      await GradeBookRepository.save({ studentId: 2, studentCode: 'HS002', studentName: 'Trần Văn Bảo', className: '10A1', subjectName: 'Toán', semester: 'HK1', schoolYear: '2024-2025', scoreOral: 6.0, score15m: 6.5, score1Hour: 7.0, scoreMidTerm: 6.5, scoreFinalTerm: 7.0, averageScore: 6.7, gradeLetter: 'Khá', status: 'APPROVED' });
-    }
+    // 5. GradeBooks — Không seed dữ liệu mẫu.
+    // Điểm số phải được nhập thật qua giao diện GradebookPage.
+    // (Seeder cũ đã tự động thêm điểm của HS001, HS002 mỗi khi restart server → đã xóa)
 
     // 6. Attendances
     const existingAtt = await AttendanceRepository.findAll();

@@ -3,6 +3,17 @@ import { AttendanceService } from '../services/AttendanceService.js';
 export class AttendanceController {
   static async getAttendance(req, res) {
     try {
+      // GVCN scope: force className to their assigned class
+      if (req.user?.role === 'GVCN') {
+        if (req.gvcnClassName === '__NO_CLASS__') {
+          return res.status(403).json({ success: false, message: 'GVCN chưa được phân công lớp chủ nhiệm.', code: 'GVCN_NOT_ASSIGNED' });
+        }
+        // Override any className from query with the trusted assigned class
+        const forcedQuery = { ...req.query, className: req.gvcnClassName };
+        delete forcedQuery.studentCode; // GVCN sees class-level data, not individual lookup bypass
+        const records = await AttendanceService.getAttendance(forcedQuery);
+        return res.json(records);
+      }
       const records = await AttendanceService.getAttendance(req.query);
       return res.json(records);
     } catch (err) {
@@ -34,6 +45,20 @@ export class AttendanceController {
     try {
       const payload = req.body;
       let count = 0;
+
+      // GVCN scope: validate all records belong to their assigned class
+      if (req.user?.role === 'GVCN') {
+        if (req.gvcnClassName === '__NO_CLASS__') {
+          return res.status(403).json({ success: false, message: 'GVCN chưa được phân công lớp chủ nhiệm.', code: 'GVCN_NOT_ASSIGNED' });
+        }
+        const items = Array.isArray(payload) ? payload : [payload];
+        for (const item of items) {
+          const itemClass = item.className || item.class_name;
+          if (itemClass && itemClass !== req.gvcnClassName) {
+            return res.status(403).json({ success: false, message: 'GVCN chỉ được điểm danh lớp chủ nhiệm của mình.', code: 'GVCN_SCOPE_VIOLATION' });
+          }
+        }
+      }
 
       if (Array.isArray(payload)) {
         const saved = await AttendanceService.saveAllAttendance(payload);

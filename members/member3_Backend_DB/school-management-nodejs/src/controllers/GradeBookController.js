@@ -7,7 +7,14 @@ export class GradeBookController {
    */
   static async getPageData(req, res) {
     try {
-      const { className, semester = 'HK1', schoolYear = '2024-2025' } = req.query;
+      let { className, semester = 'HK1', schoolYear = '2024-2025' } = req.query;
+      // GVCN scope: override className bằng lớp được phân công (trusted)
+      if (req.user?.role === 'GVCN') {
+        if (req.gvcnClassName === '__NO_CLASS__') {
+          return res.status(403).json({ success: false, message: 'GVCN chưa được phân công lớp chủ nhiệm.', code: 'GVCN_NOT_ASSIGNED' });
+        }
+        className = req.gvcnClassName;
+      }
       if (!className) {
         return res.status(400).json({ success: false, message: 'Thiếu tham số className' });
       }
@@ -21,7 +28,15 @@ export class GradeBookController {
 
   static async getGradeBook(req, res) {
     try {
-      const grades = await GradeBookService.getGrades(req.query);
+      let query = { ...req.query };
+      // GVCN scope: force className
+      if (req.user?.role === 'GVCN') {
+        if (req.gvcnClassName === '__NO_CLASS__') {
+          return res.status(403).json({ success: false, message: 'GVCN chưa được phân công lớp chủ nhiệm.', code: 'GVCN_NOT_ASSIGNED' });
+        }
+        query.className = req.gvcnClassName;
+      }
+      const grades = await GradeBookService.getGrades(query);
       return res.json(grades);
     } catch (err) {
       return res.status(500).json({ success: false, message: err.message });
@@ -31,8 +46,20 @@ export class GradeBookController {
   static async saveGrades(req, res) {
     try {
       const payload = req.body;
+      // GVCN scope check
+      if (req.user?.role === 'GVCN') {
+        if (req.gvcnClassName === '__NO_CLASS__') {
+          return res.status(403).json({ success: false, message: 'GVCN chưa được phân công lớp chủ nhiệm.', code: 'GVCN_NOT_ASSIGNED' });
+        }
+        const items = Array.isArray(payload) ? payload : [payload];
+        for (const item of items) {
+          const itemClass = item.className || item.class_name;
+          if (itemClass && itemClass !== req.gvcnClassName) {
+            return res.status(403).json({ success: false, message: 'GVCN chỉ được nhập điểm lớp chủ nhiệm của mình.', code: 'GVCN_SCOPE_VIOLATION' });
+          }
+        }
+      }
       let count = 0;
-
       if (Array.isArray(payload)) {
         const saved = await GradeBookService.saveAllGrades(payload);
         count = saved.length;
@@ -40,7 +67,6 @@ export class GradeBookController {
         await GradeBookService.saveGrade(payload);
         count = 1;
       }
-
       return res.json({
         success: true,
         message: 'Đã lưu thông tin sổ điểm thành công vào Node.js & PostgreSQL!',
@@ -61,6 +87,18 @@ export class GradeBookController {
       const { items } = req.body;
       if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ success: false, message: 'Không có dữ liệu để lưu' });
+      }
+      // GVCN scope check
+      if (req.user?.role === 'GVCN') {
+        if (req.gvcnClassName === '__NO_CLASS__') {
+          return res.status(403).json({ success: false, message: 'GVCN chưa được phân công lớp chủ nhiệm.', code: 'GVCN_NOT_ASSIGNED' });
+        }
+        for (const item of items) {
+          const itemClass = item.className || item.class_name;
+          if (itemClass && itemClass !== req.gvcnClassName) {
+            return res.status(403).json({ success: false, message: 'GVCN chỉ được nhập điểm lớp chủ nhiệm của mình.', code: 'GVCN_SCOPE_VIOLATION' });
+          }
+        }
       }
       const saved = await GradeBookService.saveGradesFromSpreadsheet(items);
       return res.json({

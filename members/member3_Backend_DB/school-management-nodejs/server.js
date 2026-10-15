@@ -16,7 +16,9 @@ import { DashboardController } from './src/controllers/DashboardController.js';
 import { ScheduleController } from './src/controllers/ScheduleController.js';
 import { ReportController } from './src/controllers/ReportController.js';
 import { UserController } from './src/controllers/UserController.js';
+import { CommunicationController } from './src/controllers/CommunicationController.js';
 import { authenticateToken } from './src/middleware/authMiddleware.js';
+import { resolveGvcnClass } from './src/middleware/dataAccessMiddleware.js';
 import { forgotPasswordLimiter, resetPasswordLimiter } from './src/middleware/rateLimiters.js';
 dotenv.config();
 
@@ -59,24 +61,24 @@ app.post('/api/auth/reset-password', resetPasswordLimiter, AuthController.resetP
 app.get('/api/auth/me', authenticateToken, AuthController.me);
 
 // Students Routes
-app.get('/api/students', StudentController.getStudents);
-app.get('/api/students/:id', StudentController.getStudentById);
-app.post('/api/students', StudentController.createStudent);
-app.put('/api/students/:id', StudentController.updateStudent);
-app.post('/api/students/:id/calculate-gpa', StudentController.calculateGPA);
+app.get('/api/students',      authenticateToken, resolveGvcnClass, StudentController.getStudents);
+app.get('/api/students/:id',  authenticateToken, resolveGvcnClass, StudentController.getStudentById);
+app.post('/api/students',     authenticateToken, resolveGvcnClass, StudentController.createStudent);
+app.put('/api/students/:id',  authenticateToken, resolveGvcnClass, StudentController.updateStudent);
+app.post('/api/students/:id/calculate-gpa', authenticateToken, StudentController.calculateGPA);
 
 // GradeBook Routes
-app.get('/api/gradebook',               GradeBookController.getGradeBook);
-app.get('/api/gradebook/page-data',     authenticateToken, GradeBookController.getPageData);
-app.post('/api/gradebook/save',         GradeBookController.saveGrades);
-app.post('/api/gradebook/save-spreadsheet', authenticateToken, GradeBookController.saveSpreadsheet);
-app.post('/api/gradebook/lock',         GradeBookController.lockGradeSheet);
-app.post('/api/gradebook/unlock',       GradeBookController.unlockGradeSheet);
+app.get('/api/gradebook',               authenticateToken, resolveGvcnClass, GradeBookController.getGradeBook);
+app.get('/api/gradebook/page-data',     authenticateToken, resolveGvcnClass, GradeBookController.getPageData);
+app.post('/api/gradebook/save',         authenticateToken, resolveGvcnClass, GradeBookController.saveGrades);
+app.post('/api/gradebook/save-spreadsheet', authenticateToken, resolveGvcnClass, GradeBookController.saveSpreadsheet);
+app.post('/api/gradebook/lock',         authenticateToken, GradeBookController.lockGradeSheet);
+app.post('/api/gradebook/unlock',       authenticateToken, GradeBookController.unlockGradeSheet);
 
 // Attendance Routes
-app.get('/api/attendance', AttendanceController.getAttendance);
-app.get('/api/attendance/summary', AttendanceController.getAttendanceSummary);
-app.post('/api/attendance/save', AttendanceController.saveAttendance);
+app.get('/api/attendance', authenticateToken, resolveGvcnClass, AttendanceController.getAttendance);
+app.get('/api/attendance/summary', authenticateToken, AttendanceController.getAttendanceSummary);
+app.post('/api/attendance/save', authenticateToken, resolveGvcnClass, AttendanceController.saveAttendance);
 
 // Leave Requests Routes
 app.get('/api/leave-requests', LeaveRequestController.getLeaveRequests);
@@ -94,7 +96,9 @@ app.get('/api/subjects', SubjectController.getSubjects);
 app.post('/api/subjects', SubjectController.createSubject);
 
 // Dashboard Routes
-app.get('/api/dashboard/bgh', authenticateToken, DashboardController.getBGHDashboard);
+app.get('/api/dashboard/bgh',  authenticateToken, DashboardController.getBGHDashboard);
+app.get('/api/dashboard/gvcn', authenticateToken, DashboardController.getGVCNDashboard);
+app.patch('/api/dashboard/gvcn/leave-requests/:id', authenticateToken, DashboardController.processLeaveRequest);
 
 // Schedule Routes
 app.get('/api/schedules',    authenticateToken, ScheduleController.getSchedulePageData);
@@ -112,6 +116,13 @@ app.post('/api/users',                  authenticateToken, UserController.create
 app.put('/api/users/:id',               authenticateToken, UserController.updateUser);
 app.patch('/api/users/:id/deactivate',  authenticateToken, UserController.deactivateUser);
 app.delete('/api/users/:id',            authenticateToken, UserController.deleteUser);
+
+// Communication Routes (Sổ liên lạc)
+app.get('/api/communication/page-data',    authenticateToken, CommunicationController.getPageData);
+app.get('/api/communication/students',     authenticateToken, CommunicationController.getStudents);
+app.get('/api/communication/messages',     authenticateToken, CommunicationController.getThread);
+app.post('/api/communication/notifications', authenticateToken, CommunicationController.sendNotification);
+app.post('/api/communication/messages',    authenticateToken, CommunicationController.sendMessage);
 
 // Global 404 Handler
 app.use((req, res) => {

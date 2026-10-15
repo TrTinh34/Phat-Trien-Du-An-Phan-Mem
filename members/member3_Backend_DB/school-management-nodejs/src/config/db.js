@@ -151,8 +151,26 @@ export async function initDatabaseSchema() {
         approved_at  TIMESTAMPTZ,
         UNIQUE (class_id, semester, school_year)
       );
+      CREATE TABLE IF NOT EXISTS notifications (
+        id          SERIAL PRIMARY KEY,
+        title       VARCHAR(255) NOT NULL,
+        content     TEXT,
+        type        VARCHAR(30)  NOT NULL DEFAULT 'general',
+        sender_id   VARCHAR(50),
+        recipients  TEXT[],
+        sent_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+        status      VARCHAR(20)  NOT NULL DEFAULT 'sent'
+      );
+      CREATE TABLE IF NOT EXISTS parent_messages (
+        id          SERIAL PRIMARY KEY,
+        student_id  VARCHAR(30) NOT NULL,
+        class_name  VARCHAR(30),
+        from_role   VARCHAR(10)  NOT NULL DEFAULT 'gv',
+        message     TEXT         NOT NULL,
+        sent_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
     `);
-    // ===== Chức năng quên mật khẩu =====
+    // ===== Chức năng quên mật khẩu + migration homeroom_teacher_id =====
     await query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INT NOT NULL DEFAULT 0;
@@ -170,7 +188,35 @@ export async function initDatabaseSchema() {
       );
       CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id
         ON password_reset_tokens (user_id);
+
+      ALTER TABLE school_classes ADD COLUMN IF NOT EXISTS homeroom_teacher_id INTEGER REFERENCES users(id);
     `);
+
+    // Backfill homeroom_teacher_id từ gvcn_name → users.full_name (prefix match)
+    // Seeder lưu full_name = 'Lê Minh Châu (GVCN 10A1)', còn school_classes.gvcn_name = 'Lê Minh Châu'
+    // Chỉ cập nhật các hàng homeroom_teacher_id IS NULL để không ghi đè phân công hợp lệ
+    try {
+      const backfillResult = await pool.query(`
+        UPDATE school_classes sc
+        SET homeroom_teacher_id = u.id
+        FROM users u
+        WHERE u.role = 'GVCN'
+          AND u.full_name LIKE sc.gvcn_name || '%'
+          AND sc.homeroom_teacher_id IS NULL
+      `);
+      if (backfillResult.rowCount > 0) {
+        console.log(`[DB INIT] Backfilled homeroom_teacher_id for ${backfillResult.rowCount} class(es).`);
+      }
+      // Báo cáo các lớp chưa khớp
+      const unmatched = await pool.query(`
+        SELECT class_name, gvcn_name FROM school_classes WHERE homeroom_teacher_id IS NULL AND gvcn_name IS NOT NULL
+      `);
+      if (unmatched.rows.length > 0) {
+        console.warn('[DB INIT] Classes with unmatched homeroom_teacher_id:', unmatched.rows.map(r => `${r.class_name} (gvcn_name: ${r.gvcn_name})`).join(', '));
+      }
+    } catch (backfillErr) {
+      console.warn('[DB INIT] homeroom_teacher_id backfill warning:', backfillErr.message);
+    }
   } catch (err) {
     console.error('[DB INIT ERROR] Không thể khởi tạo schema PostgreSQL:', err.message);
     throw err;

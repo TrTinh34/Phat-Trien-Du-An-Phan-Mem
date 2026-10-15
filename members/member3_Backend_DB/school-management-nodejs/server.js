@@ -125,8 +125,10 @@ app.put   ('/api/users/:id',            authenticateToken, requireBGH, UserContr
 app.patch ('/api/users/:id/deactivate', authenticateToken, requireBGH, UserController.deactivateUser);
 app.delete('/api/users/:id',            authenticateToken, requireBGH, UserController.deleteUser);
 
-// Settings Routes (Permissions - BGH only)
-app.get('/api/settings/permissions', authenticateToken, requireBGH, SettingsController.getPermissions);
+// Settings Routes
+// GET: tất cả user đã login đều được đọc permissions (để Sidebar ẩn/hiện đúng)
+// PUT: chỉ BGH mới được thay đổi
+app.get('/api/settings/permissions', authenticateToken, SettingsController.getPermissions);
 app.put('/api/settings/permissions', authenticateToken, requireBGH, SettingsController.savePermissions);
 
 // Communication Routes (Sổ liên lạc)

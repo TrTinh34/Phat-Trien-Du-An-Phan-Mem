@@ -2,7 +2,7 @@
 
 export class AttendanceRepository {
   static async findAll() {
-    const res = await query('SELECT * FROM attendances ORDER BY id ASC');
+    const res = await query('SELECT * FROM attendances ');
     return res.rows;
   }
 
@@ -85,6 +85,37 @@ export class AttendanceRepository {
       );
       return res.rows[0];
     }
+  }
+
+  /**
+   * Upsert điểm danh theo (student_code, class_name, att_date).
+   * Nếu bản ghi đã tồn tại → UPDATE status + note.
+   * Nếu chưa → INSERT mới.
+   * Không cần truyền id từ frontend.
+   */
+  static async upsert(att) {
+    // Tìm student_id từ student_code nếu chưa có
+    let studentId = att.studentId ?? null;
+    if (!studentId && att.studentCode) {
+      const stRes = await query(
+        'SELECT id FROM students WHERE student_code = $1 LIMIT 1',
+        [att.studentCode]
+      );
+      studentId = stRes?.rows[0]?.id ?? null;
+    }
+
+    const res = await query(
+      `INSERT INTO attendances (student_id, student_code, student_name, class_name, att_date, status, note)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (student_code, class_name, att_date)
+       DO UPDATE SET
+         status       = EXCLUDED.status,
+         note         = EXCLUDED.note,
+         student_name = EXCLUDED.student_name
+       RETURNING *`,
+      [studentId, att.studentCode, att.studentName, att.className, att.attDate, att.status, att.note]
+    );
+    return res.rows[0];
   }
 }
 

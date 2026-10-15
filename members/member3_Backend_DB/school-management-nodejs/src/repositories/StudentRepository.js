@@ -1,12 +1,6 @@
 import { querySafe as query } from '../config/db.js';
 
-let memStudents = [
-  { id: 1, student_code: 'HS001', studentCode: 'HS001', full_name: 'Nguyễn Thị Ánh', fullName: 'Nguyễn Thị Ánh', gender: 'Nữ', dob: '2008-05-12', class_name: '10A1', className: '10A1', parent_name: 'Nguyễn Thị Hương', parentName: 'Nguyễn Thị Hương', parent_phone: '0901234567', parentPhone: '0901234567', gpa: 8.7, academic_rank: 'Giỏi', academicRank: 'Giỏi', status: 'ACTIVE' },
-  { id: 2, student_code: 'HS002', studentCode: 'HS002', full_name: 'Trần Văn Bảo', fullName: 'Trần Văn Bảo', gender: 'Nam', dob: '2008-03-22', class_name: '10A1', className: '10A1', parent_name: 'Trần Văn Hùng', parentName: 'Trần Văn Hùng', parent_phone: '0907654321', parentPhone: '0907654321', gpa: 6.8, academic_rank: 'Khá', academicRank: 'Khá', status: 'ACTIVE' },
-  { id: 3, student_code: 'HS003', studentCode: 'HS003', full_name: 'Lê Thị Cẩm', fullName: 'Lê Thị Cẩm', gender: 'Nữ', dob: '2008-11-10', class_name: '10A1', className: '10A1', parent_name: 'Lê Văn Tâm', parentName: 'Lê Văn Tâm', parent_phone: '0912345678', parentPhone: '0912345678', gpa: 4.5, academic_rank: 'Yếu', academicRank: 'Yếu', status: 'ACTIVE' },
-  { id: 4, student_code: 'HS004', studentCode: 'HS004', full_name: 'Phạm Hữu Dũng', fullName: 'Phạm Hữu Dũng', gender: 'Nam', dob: '2008-01-15', class_name: '10A1', className: '10A1', parent_name: 'Phạm Thị Lan', parentName: 'Phạm Thị Lan', parent_phone: '0922334455', parentPhone: '0922334455', gpa: 8.5, academic_rank: 'Giỏi', academicRank: 'Giỏi', status: 'ACTIVE' },
-  { id: 5, student_code: 'HS005', studentCode: 'HS005', full_name: 'Đặng Thị Giang', fullName: 'Đặng Thị Giang', gender: 'Nữ', dob: '2008-07-08', class_name: '10A2', className: '10A2', parent_name: 'Đặng Văn Nam', parentName: 'Đặng Văn Nam', parent_phone: '0933445566', parentPhone: '0933445566', gpa: 7.2, academic_rank: 'Khá', academicRank: 'Khá', status: 'ACTIVE' }
-];
+
 
 export class StudentRepository {
   static async findAll() {

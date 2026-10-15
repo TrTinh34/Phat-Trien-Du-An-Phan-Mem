@@ -87,4 +87,60 @@ export class DashboardService {
       attendanceTrend,
     };
   }
+
+  /**
+   * Lấy toàn bộ dữ liệu cho Dashboard GVCN.
+   * @param {number} gvcnUserId - user.id từ JWT (trusted) của GVCN đang đăng nhập
+   */
+  static async getGVCNSummary(gvcnUserId) {
+    // Bước 1: lấy thông tin lớp + học sinh qua homeroom_teacher_id FK
+    const { classInfo, students } = await DashboardRepository.getHomeroomClassByGvcnId(gvcnUserId);
+
+    if (!classInfo) {
+      return {
+        classInfo:        null,
+        students:         [],
+        todayAttendance:  null,
+        pendingLeaves:    [],
+        conductSummary:   [],
+      };
+    }
+
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+    // Bước 2: fetch song song điểm danh hôm nay, đơn nghỉ, hạnh kiểm
+    const [todayAttendance, pendingLeaves, rawConduct] = await Promise.all([
+      DashboardRepository.getTodayAttendance(classInfo.id, today),
+      DashboardRepository.getPendingLeaveRequests(classInfo.id),
+      DashboardRepository.getConductSummary(classInfo.id),
+    ]);
+
+    // Tính tỉ lệ chuyên cần hôm nay
+    const totalStudents = students.length;
+    let attendanceRate  = null;
+    if (todayAttendance && todayAttendance.total > 0) {
+      attendanceRate = Math.round((todayAttendance.present / todayAttendance.total) * 100);
+    }
+
+    // Phân bố hạnh kiểm dưới dạng map { Tốt: n, Khá: n, ... }
+    const conductMap = {};
+    for (const item of rawConduct) {
+      conductMap[item.rank] = item.count;
+    }
+    const goodCount = conductMap['Giỏi'] ?? 0 + (conductMap['Khá'] ?? 0);
+    const conductPct = totalStudents > 0
+      ? Math.round(((conductMap['Giỏi'] ?? 0) / totalStudents) * 100)
+      : 0;
+
+    return {
+      classInfo,
+      students,
+      todayAttendance: todayAttendance
+        ? { ...todayAttendance, totalStudents, attendanceRate }
+        : { total: 0, present: 0, absentNoPermit: 0, absentWithPermit: 0, totalStudents, attendanceRate: null },
+      pendingLeaves,
+      conductSummary: rawConduct,
+      conductPct,
+    };
+  }
 }

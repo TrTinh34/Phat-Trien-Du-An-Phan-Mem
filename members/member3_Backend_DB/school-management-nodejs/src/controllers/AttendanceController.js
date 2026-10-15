@@ -44,15 +44,40 @@ export class AttendanceController {
   static async saveAttendance(req, res) {
     try {
       const payload = req.body;
-      let count = 0;
+      console.log('[AttendanceController] saveAttendance raw body:', JSON.stringify(payload));
 
-      // GVCN scope: validate all records belong to their assigned class
+      // ── Chuẩn hóa thành mảng flat records ──────────────────────────────────
+      // Frontend gửi: { className, attDate, entries: [{ studentCode, studentName, status }] }
+      // Hoặc legacy:  [{ className, attDate, studentCode, status }, ...]
+      let records = [];
+
+      if (Array.isArray(payload)) {
+        // Legacy array format
+        records = payload;
+      } else if (Array.isArray(payload.entries)) {
+        // New format: bóc entries ra, gắn className + attDate từ wrapper
+        records = payload.entries.map((entry) => ({
+          studentCode: entry.studentCode || entry.student_code,
+          studentName: entry.studentName || entry.student_name || '',
+          status:      entry.status,
+          className:   entry.className   || entry.class_name   || payload.className || payload.class_name,
+          attDate:     entry.attDate     || entry.att_date     || payload.attDate   || payload.att_date,
+        }));
+      } else {
+        // Single record
+        records = [payload];
+      }
+
+      if (records.length === 0) {
+        return res.status(400).json({ success: false, message: 'Không có dữ liệu điểm danh để lưu.' });
+      }
+
+      // ── GVCN scope check ────────────────────────────────────────────────────
       if (req.user?.role === 'GVCN') {
         if (req.gvcnClassName === '__NO_CLASS__') {
           return res.status(403).json({ success: false, message: 'GVCN chưa được phân công lớp chủ nhiệm.', code: 'GVCN_NOT_ASSIGNED' });
         }
-        const items = Array.isArray(payload) ? payload : [payload];
-        for (const item of items) {
+        for (const item of records) {
           const itemClass = item.className || item.class_name;
           if (itemClass && itemClass !== req.gvcnClassName) {
             return res.status(403).json({ success: false, message: 'GVCN chỉ được điểm danh lớp chủ nhiệm của mình.', code: 'GVCN_SCOPE_VIOLATION' });
@@ -60,18 +85,12 @@ export class AttendanceController {
         }
       }
 
-      if (Array.isArray(payload)) {
-        const saved = await AttendanceService.saveAllAttendance(payload);
-        count = saved.length;
-      } else {
-        await AttendanceService.saveAttendance(payload);
-        count = 1;
-      }
+      const saved = await AttendanceService.saveAllAttendance(records);
 
       return res.json({
         success: true,
         message: 'Đã lưu thông tin điểm danh thành công vào PostgreSQL!',
-        count,
+        count: saved.length,
       });
     } catch (err) {
       return res.status(400).json({ success: false, message: err.message });

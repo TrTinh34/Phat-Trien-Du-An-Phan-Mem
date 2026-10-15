@@ -169,6 +169,11 @@ export async function initDatabaseSchema() {
         message     TEXT         NOT NULL,
         sent_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS system_settings (
+        key         VARCHAR(100) PRIMARY KEY,
+        value       JSONB        NOT NULL,
+        updated_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+      );
     `);
     // ===== Chức năng quên mật khẩu + migration homeroom_teacher_id =====
     await query(`

@@ -104,8 +104,6 @@ export class DashboardRepository {
 
   /**
    * Xu hướng chuyên cần theo tuần, lấy N tuần gần nhất.
-   * @param {number} weeks - Số tuần cần lấy
-   * @returns {Array<{ weekStart: string, total: number, present: number }>}
    */
   static async getAttendanceTrendByWeek(weeks = 5) {
     const res = await query(
@@ -125,6 +123,160 @@ export class DashboardRepository {
       weekStart: row.week_start,
       total: parseInt(row.total, 10),
       present: parseInt(row.present, 10),
+    }));
+  }
+
+  // ── GVCN Dashboard ────────────────────────────────────────────────────────
+
+  /**
+   * Thông tin lớp chủ nhiệm theo user ID (homeroom_teacher_id FK).
+   * Đây là cách tra cứu an toàn — dùng user.id từ JWT, không dùng chuỗi tên.
+   * @param {number} gvcnUserId - req.user.id từ JWT đã xác thực
+   */
+  static async getHomeroomClassByGvcnId(gvcnUserId) {
+    // Tìm lớp qua homeroom_teacher_id FK
+    const classRes = await query(
+      `SELECT * FROM school_classes WHERE homeroom_teacher_id = $1 LIMIT 1`,
+      [gvcnUserId]
+    );
+    const classRow = classRes?.rows[0] ?? null;
+    if (!classRow) return { classInfo: null, students: [] };
+
+    // Lấy học sinh của lớp
+    const studentsRes = await query(
+      `SELECT id, student_code, full_name, gender, gpa, academic_rank, status
+       FROM students
+       WHERE class_name = $1 AND status = 'ACTIVE'
+       ORDER BY full_name ASC`,
+      [classRow.class_name]
+    );
+
+    return {
+      classInfo: {
+        id:         classRow.class_name,
+        name:       classRow.class_name,
+        gradeLevel: classRow.grade_level,
+        gvcnName:   classRow.gvcn_name,
+      },
+      students: (studentsRes?.rows ?? []).map((s) => ({
+        id:           s.id,
+        code:         s.student_code,
+        name:         s.full_name,
+        gender:       s.gender,
+        gpa:          s.gpa != null ? parseFloat(s.gpa) : null,
+        academicRank: s.academic_rank || '',
+        status:       s.status,
+      })),
+    };
+  }
+
+  /**
+   * @deprecated Dùng getHomeroomClassByGvcnId thay thế — method này dùng full_name string
+   * matching không đáng tin cậy. Giữ lại để backward compat trong trường hợp cần.
+   */
+  static async getHomeroomClassByGvcn(gvcnUsername) {
+    const userRes = await query(
+      `SELECT full_name FROM users WHERE username = $1`,
+      [gvcnUsername]
+    );
+    const gvcnName = userRes?.rows[0]?.full_name ?? null;
+    const classRes = await query(
+      `SELECT * FROM school_classes WHERE gvcn_name = $1 LIMIT 1`,
+      [gvcnName]
+    );
+    const classRow = classRes?.rows[0] ?? null;
+    if (!classRow) return { classInfo: null, students: [] };
+    const studentsRes = await query(
+      `SELECT id, student_code, full_name, gender, gpa, academic_rank, status
+       FROM students
+       WHERE class_name = $1 AND status = 'ACTIVE'
+       ORDER BY full_name ASC`,
+      [classRow.class_name]
+    );
+    return {
+      classInfo: {
+        id:         classRow.class_name,
+        name:       classRow.class_name,
+        gradeLevel: classRow.grade_level,
+        gvcnName:   classRow.gvcn_name,
+      },
+      students: (studentsRes?.rows ?? []).map((s) => ({
+        id:           s.id,
+        code:         s.student_code,
+        name:         s.full_name,
+        gender:       s.gender,
+        gpa:          s.gpa != null ? parseFloat(s.gpa) : null,
+        academicRank: s.academic_rank || '',
+        status:       s.status,
+      })),
+    };
+  }
+
+  /**
+   * Điểm danh hôm nay của một lớp.
+   * @param {string} className
+   * @param {string} todayStr  — YYYY-MM-DD
+   */
+  static async getTodayAttendance(className, todayStr) {
+    const res = await query(
+      `SELECT
+         COUNT(*) AS total,
+         COUNT(*) FILTER (WHERE status = 'PRESENT')          AS present,
+         COUNT(*) FILTER (WHERE status = 'ABSENT_NO_PERMIT') AS absent_no_permit,
+         COUNT(*) FILTER (WHERE status = 'ABSENT_WITH_PERMIT') AS absent_with_permit
+       FROM attendances
+       WHERE class_name = $1 AND att_date = $2`,
+      [className, todayStr]
+    );
+    if (!res || !res.rows[0]) return null;
+    const row = res.rows[0];
+    return {
+      total:           parseInt(row.total,            10),
+      present:         parseInt(row.present,          10),
+      absentNoPermit:  parseInt(row.absent_no_permit, 10),
+      absentWithPermit:parseInt(row.absent_with_permit,10),
+    };
+  }
+
+  /**
+   * Đơn xin nghỉ chờ duyệt của một lớp.
+   */
+  static async getPendingLeaveRequests(className) {
+    const res = await query(
+      `SELECT id, student_code, student_name, from_date, to_date, reason, status, created_at
+       FROM leave_requests
+       WHERE class_name = $1 AND status = 'PENDING'
+       ORDER BY created_at DESC`,
+      [className]
+    );
+    if (!res) return [];
+    return res.rows.map((r) => ({
+      id:          r.id,
+      studentCode: r.student_code,
+      studentName: r.student_name,
+      fromDate:    r.from_date,
+      toDate:      r.to_date,
+      reason:      r.reason,
+      status:      r.status.toLowerCase(),
+      createdAt:   r.created_at,
+    }));
+  }
+
+  /**
+   * Phân bố hạnh kiểm (dùng academic_rank làm proxy) của một lớp.
+   */
+  static async getConductSummary(className) {
+    const res = await query(
+      `SELECT academic_rank, COUNT(*) AS cnt
+       FROM students
+       WHERE class_name = $1 AND status = 'ACTIVE'
+       GROUP BY academic_rank`,
+      [className]
+    );
+    if (!res) return [];
+    return res.rows.map((r) => ({
+      rank:  r.academic_rank || 'Chưa xếp loại',
+      count: parseInt(r.cnt, 10),
     }));
   }
 }

@@ -49,13 +49,27 @@ export class AttendanceService {
   }
 
   static async saveAttendance(attendance) {
-    return await AttendanceRepository.save(attendance);
+    // Normalize field names: frontend gửi { studentCode, studentName, className, attDate, status }
+    const normalized = {
+      studentCode: attendance.studentCode || attendance.student_code,
+      studentName: attendance.studentName || attendance.student_name || '',
+      className:   attendance.className   || attendance.class_name,
+      attDate:     attendance.attDate     || attendance.att_date,
+      status:      (attendance.status || 'present').toUpperCase(),
+      note:        attendance.note        || null,
+    };
+    console.log('[AttendanceService] saveAttendance normalized:', JSON.stringify(normalized));
+    if (!normalized.studentCode) {
+      console.error('[AttendanceService] MISSING studentCode! raw input:', JSON.stringify(attendance));
+      throw new Error(`Thiếu studentCode. Dữ liệu nhận được: ${JSON.stringify(attendance)}`);
+    }
+    return await AttendanceRepository.upsert(normalized);
   }
 
   static async saveAllAttendance(attendanceList) {
     const results = [];
     for (const att of attendanceList) {
-      const saved = await AttendanceRepository.save(att);
+      const saved = await AttendanceService.saveAttendance(att);
       results.push(saved);
     }
     return results;

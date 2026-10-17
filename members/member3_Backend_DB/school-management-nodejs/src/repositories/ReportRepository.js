@@ -71,19 +71,42 @@ export class ReportRepository {
 
   /**
    * Tỉ lệ học lực theo từng khối (grade_level).
-   * Đếm academic_rank từ bảng students.
+   * Tính trực tiếp từ grade_books theo semester/schoolYear.
    */
-  static async getAcademicRankByGrade() {
+  static async getAcademicRankByGrade(semester, schoolYear) {
     const res = await query(
-      `SELECT
-         sc.grade_level,
-         s.academic_rank,
-         COUNT(*) AS cnt
-       FROM students s
-       JOIN school_classes sc ON sc.class_name = s.class_name
-       WHERE s.status = 'ACTIVE' AND s.academic_rank IS NOT NULL
-       GROUP BY sc.grade_level, s.academic_rank
-       ORDER BY sc.grade_level ASC`
+      `WITH student_avg AS (
+        SELECT
+          gb.student_code,
+          s.class_name,
+          AVG(gb.average_score) AS gpa
+        FROM grade_books gb
+        JOIN students s ON s.student_code = gb.student_code
+        WHERE gb.semester = $1
+          AND gb.school_year = $2
+          AND s.status = 'ACTIVE'
+          AND gb.average_score IS NOT NULL
+        GROUP BY gb.student_code, s.class_name
+      ),
+      student_rank AS (
+        SELECT
+          sa.class_name,
+          CASE
+            WHEN sa.gpa >= 9.0 THEN 'Xuất sắc'
+            WHEN sa.gpa >= 8.0 THEN 'Giỏi'
+            WHEN sa.gpa >= 6.5 THEN 'Khá'
+            WHEN sa.gpa >= 5.0 THEN 'Trung bình'
+            WHEN sa.gpa >= 3.5 THEN 'Yếu'
+            ELSE 'Kém'
+          END AS academic_rank
+        FROM student_avg sa
+      )
+      SELECT sc.grade_level, sr.academic_rank, COUNT(*) AS cnt
+      FROM student_rank sr
+      JOIN school_classes sc ON sc.class_name = sr.class_name
+      GROUP BY sc.grade_level, sr.academic_rank
+      ORDER BY sc.grade_level ASC`,
+      [semester, schoolYear]
     );
     if (!res) return [];
     return res.rows;

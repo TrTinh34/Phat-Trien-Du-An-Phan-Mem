@@ -47,7 +47,9 @@ export class GradeBookService {
       semester:      g.semester,
       schoolYear:    g.school_year  || g.schoolYear,
       scoreOral:     g.score_oral   != null ? parseFloat(g.score_oral)   : null,
+      scoreOral2:    g.score_oral_2 != null ? parseFloat(g.score_oral_2) : null,
       score15m:      g.score_15m    != null ? parseFloat(g.score_15m)    : null,
+      score15m2:     g.score_15m_2  != null ? parseFloat(g.score_15m_2)  : null,
       score1Hour:    g.score_1hour  != null ? parseFloat(g.score_1hour)  : null,
       scoreMidTerm:  g.score_mid_term  != null ? parseFloat(g.score_mid_term)  : null,
       scoreFinalTerm:g.score_final_term!= null ? parseFloat(g.score_final_term): null,
@@ -71,11 +73,13 @@ export class GradeBookService {
         studentCode:    item.studentCode,
         studentName:    item.studentName,
         className:      item.className,
-        subjectName:    item.subjectId, // subjectId is subjectName on this page
+        subjectName:    item.subjectId,
         semester:       item.semester,
         schoolYear:     item.schoolYear,
         scoreOral:      item.scoreOral,
+        scoreOral2:     item.scoreOral2  ?? null,
         score15m:       item.score15m,
+        score15m2:      item.score15m2   ?? null,
         score1Hour:     item.score1Hour,
         scoreMidTerm:   item.scoreMidTerm,
         scoreFinalTerm: item.scoreFinalTerm,
@@ -137,24 +141,40 @@ export class GradeBookService {
   }
 
   static calculateTBM(gb) {
-    const oral = parseFloat(gb.scoreOral || gb.score_oral || 0);
-    const m15 = parseFloat(gb.score15m || gb.score_15m || 0);
-    const h1 = parseFloat(gb.score1Hour || gb.score_1hour || 0);
-    const mid = parseFloat(gb.scoreMidTerm || gb.score_mid_term || 0);
-    const fin = parseFloat(gb.scoreFinalTerm || gb.score_final_term || 0);
+    const oral  = gb.scoreOral   != null ? parseFloat(gb.scoreOral)   : null;
+    const oral2 = gb.scoreOral2  != null ? parseFloat(gb.scoreOral2)  : null;
+    const m15   = gb.score15m    != null ? parseFloat(gb.score15m)    : null;
+    const m15_2 = gb.score15m2   != null ? parseFloat(gb.score15m2)   : null;
+    const h1    = gb.score1Hour  != null ? parseFloat(gb.score1Hour)  : null;
+    const mid   = gb.scoreMidTerm   != null ? parseFloat(gb.scoreMidTerm)   : null;
+    const fin   = gb.scoreFinalTerm != null ? parseFloat(gb.scoreFinalTerm) : null;
 
-    if (oral > 0 && m15 > 0 && h1 > 0 && mid > 0 && fin > 0) {
-      const total = oral + m15 + (h1 * 2) + (mid * 2) + (fin * 3);
-      const avg = Math.round((total / 9.0) * 10) / 10;
-      gb.averageScore = avg;
+    // Trọng số: miệng=1, 15'=1, 1tiết=2, giữa HK=2, cuối HK=3
+    let sum = 0, weight = 0;
+    if (oral  != null && !isNaN(oral))  { sum += oral  * 1; weight += 1; }
+    if (oral2 != null && !isNaN(oral2)) { sum += oral2 * 1; weight += 1; }
+    if (m15   != null && !isNaN(m15))   { sum += m15   * 1; weight += 1; }
+    if (m15_2 != null && !isNaN(m15_2)) { sum += m15_2 * 1; weight += 1; }
+    if (h1    != null && !isNaN(h1))    { sum += h1    * 2; weight += 2; }
+    if (mid   != null && !isNaN(mid))   { sum += mid   * 2; weight += 2; }
+    if (fin   != null && !isNaN(fin))   { sum += fin   * 3; weight += 3; }
+
+    if (weight > 0) {
+      const avg = Math.round((sum / weight) * 10) / 10;
+      gb.averageScore  = avg;
       gb.average_score = avg;
 
-      if (avg >= 9.0) gb.gradeLetter = 'Xuất sắc';
+      if (avg >= 9.0)      gb.gradeLetter = 'Xuất sắc';
       else if (avg >= 8.0) gb.gradeLetter = 'Giỏi';
       else if (avg >= 6.5) gb.gradeLetter = 'Khá';
       else if (avg >= 5.0) gb.gradeLetter = 'Trung bình';
-      else gb.gradeLetter = 'Yếu';
+      else                 gb.gradeLetter = 'Yếu';
       gb.grade_letter = gb.gradeLetter;
+    } else {
+      gb.averageScore  = null;
+      gb.average_score = null;
+      gb.gradeLetter   = 'Chưa xếp loại';
+      gb.grade_letter  = 'Chưa xếp loại';
     }
     return gb;
   }

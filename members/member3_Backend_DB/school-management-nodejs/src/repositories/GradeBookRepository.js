@@ -1,4 +1,4 @@
-import { querySafe as query } from '../config/db.js';
+import { querySafe as query, query as queryStrict } from '../config/db.js';
 
 let memGrades = [
   { id: 1, student_id: 1, studentId: 1, student_code: 'HS001', studentCode: 'HS001', student_name: 'Nguyễn Thị Ánh', studentName: 'Nguyễn Thị Ánh', class_name: '10A1', className: '10A1', subject_name: 'Toán', subjectName: 'Toán', semester: 'HK1', school_year: '2024-2025', schoolYear: '2024-2025', score_oral: 9.0, scoreOral: 9.0, score_15m: 8.5, score15m: 8.5, score_1hour: 8.0, score1Hour: 8.0, score_mid_term: 8.5, scoreMidTerm: 8.5, score_final_term: 9.0, scoreFinalTerm: 9.0, average_score: 8.7, averageScore: 8.7, grade_letter: 'Giỏi', gradeLetter: 'Giỏi', status: 'APPROVED' },
@@ -56,35 +56,52 @@ export class GradeBookRepository {
   }
 
   static async save(gb) {
+    // Đảm bảo school_year luôn có giá trị — bắt buộc cho UNIQUE constraint
+    const schoolYear = gb.schoolYear || gb.school_year || '2024-2025';
+
     if (gb.id) {
-      const res = await query(
-        `UPDATE grade_books SET score_oral = $1, score_15m = $2, score_1hour = $3, score_mid_term = $4, score_final_term = $5, average_score = $6, grade_letter = $7, status = $8
+      // UPDATE theo id — dùng khi đã có id từ DB
+      const res = await queryStrict(
+        `UPDATE grade_books SET score_oral = $1, score_15m = $2, score_1hour = $3,
+            score_mid_term = $4, score_final_term = $5, average_score = $6,
+            grade_letter = $7, status = $8
          WHERE id = $9 RETURNING *`,
-        [gb.scoreOral, gb.score15m, gb.score1Hour, gb.scoreMidTerm, gb.scoreFinalTerm, gb.averageScore, gb.gradeLetter, gb.status || 'APPROVED', gb.id]
+        [gb.scoreOral, gb.score15m, gb.score1Hour, gb.scoreMidTerm, gb.scoreFinalTerm,
+         gb.averageScore, gb.gradeLetter, gb.status || 'APPROVED', gb.id]
       );
-      if (res && res.rows && res.rows.length > 0) return res.rows[0];
-
-      const idx = memGrades.findIndex(item => item.id === parseInt(gb.id, 10));
-      if (idx !== -1) {
-        memGrades[idx] = { ...memGrades[idx], ...gb };
-        return memGrades[idx];
-      }
+      if (res.rows.length > 0) return res.rows[0];
       return gb;
-    } else {
-      const res = await query(
-        `INSERT INTO grade_books (student_id, student_code, student_name, class_name, subject_name, semester, school_year, score_oral, score_15m, score_1hour, score_mid_term, score_final_term, average_score, grade_letter, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
-        [gb.studentId, gb.studentCode, gb.studentName, gb.className, gb.subjectName, gb.semester, gb.schoolYear, gb.scoreOral, gb.score15m, gb.score1Hour, gb.scoreMidTerm, gb.scoreFinalTerm, gb.averageScore, gb.gradeLetter, gb.status || 'APPROVED']
-      );
-      if (res && res.rows && res.rows.length > 0) return res.rows[0];
-
-      const newObj = {
-        id: memGrades.length + 1,
-        ...gb
-      };
-      memGrades.push(newObj);
-      return newObj;
     }
+
+    // UPSERT — dùng queryStrict để lỗi được throw, không nuốt vào in-memory
+    const res = await queryStrict(
+      `INSERT INTO grade_books
+         (student_id, student_code, student_name, class_name, subject_name,
+          semester, school_year, score_oral, score_oral_2, score_15m, score_15m_2,
+          score_1hour, score_mid_term, score_final_term, average_score, grade_letter, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       ON CONFLICT (student_code, subject_name, class_name, semester, school_year)
+       DO UPDATE SET
+         score_oral       = EXCLUDED.score_oral,
+         score_oral_2     = EXCLUDED.score_oral_2,
+         score_15m        = EXCLUDED.score_15m,
+         score_15m_2      = EXCLUDED.score_15m_2,
+         score_1hour      = EXCLUDED.score_1hour,
+         score_mid_term   = EXCLUDED.score_mid_term,
+         score_final_term = EXCLUDED.score_final_term,
+         average_score    = EXCLUDED.average_score,
+         grade_letter     = EXCLUDED.grade_letter,
+         status           = EXCLUDED.status
+       RETURNING *`,
+      [gb.studentId ?? null, gb.studentCode, gb.studentName, gb.className, gb.subjectName,
+       gb.semester, schoolYear,
+       gb.scoreOral, gb.scoreOral2 ?? null,
+       gb.score15m,  gb.score15m2  ?? null,
+       gb.score1Hour, gb.scoreMidTerm, gb.scoreFinalTerm,
+       gb.averageScore, gb.gradeLetter, gb.status || 'APPROVED']
+    );
+    if (res.rows.length > 0) return res.rows[0];
+    return gb;
   }
 
   static async updateStatusByClassAndSubject(className, subjectName, status) {

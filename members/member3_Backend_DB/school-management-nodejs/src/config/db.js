@@ -242,6 +242,41 @@ export async function initDatabaseSchema() {
       ALTER TABLE schedule_templates ADD COLUMN IF NOT EXISTS room VARCHAR(50);
     `);
 
+    // ===== UNIQUE constraint cho attendances (idempotent) =====
+    await query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'uq_attendances_student_class_date'
+        ) THEN
+          ALTER TABLE attendances
+            ADD CONSTRAINT uq_attendances_student_class_date
+            UNIQUE (student_code, class_name, att_date);
+        END IF;
+      END $$;
+    `);
+
+    // ===== Backfill schedule_templates từ schedules hiện có (idempotent) =====
+    try {
+      const backfillTemplates = await pool.query(`
+        INSERT INTO schedule_templates (class_id, day_of_week, period, subject_name, teacher_name, room)
+        SELECT DISTINCT ON (class_id, day_of_week, period)
+          class_id, day_of_week, period, subject_name, teacher_name, room
+        FROM schedules
+        WHERE subject_name IS NOT NULL
+        ORDER BY class_id, day_of_week, period, week_start DESC
+        ON CONFLICT (class_id, day_of_week, period) DO UPDATE SET
+          subject_name = EXCLUDED.subject_name,
+          teacher_name = EXCLUDED.teacher_name,
+          room         = EXCLUDED.room,
+          updated_at   = NOW();
+      `);
+      if (backfillTemplates.rowCount > 0) {
+        console.log(`[DB INIT] Backfilled ${backfillTemplates.rowCount} schedule_template rows from schedules.`);
+      }
+    } catch (backfillTemplatesErr) {
+      console.warn('[DB INIT] schedule_templates backfill warning:', backfillTemplatesErr.message);
+    }
+
     // Backfill homeroom_teacher_id từ gvcn_name → users.full_name (prefix match)
     // Seeder lưu full_name = 'Lê Minh Châu (GVCN 10A1)', còn school_classes.gvcn_name = 'Lê Minh Châu'
     // Chỉ cập nhật các hàng homeroom_teacher_id IS NULL để không ghi đè phân công hợp lệ

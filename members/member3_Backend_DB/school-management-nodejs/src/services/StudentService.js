@@ -69,6 +69,7 @@ export class StudentService {
     if (gpa >= 8.0) return 'Giỏi';
     if (gpa >= 6.5) return 'Khá';
     if (gpa >= 5.0) return 'Trung bình';
-    return 'Yếu';
+    if (gpa >= 3.5) return 'Yếu';
+    return 'Kém';
   }
 }

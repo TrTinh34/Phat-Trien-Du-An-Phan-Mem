@@ -33,6 +33,7 @@ export class NotificationService {
       title:           row.title,
       content:         row.content,
       type:            row.type,
+      senderId:        row.sender_id,
       senderRole:      row.sender_role,
       relatedClass:    row.related_class,
       relatedSemester: row.related_semester,

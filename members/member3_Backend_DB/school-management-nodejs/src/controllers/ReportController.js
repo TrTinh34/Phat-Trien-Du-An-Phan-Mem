@@ -85,8 +85,9 @@ export class ReportController {
         });
       }
 
-      // Reset closure về 'submitted' để GVCN có thể chỉnh sửa lại
-      await ClosureRepository.updateStatus(classId, semester, schoolYear, 'submitted');
+      // Reset closure về 'approved' để GVCN có thể chỉnh sửa lại
+      // (không reset về 'submitted' vì submitted cũng là read-only với GVCN)
+      await ClosureRepository.updateStatus(classId, semester, schoolYear, 'approved');
 
       // Đánh dấu notification đã xử lý nếu có
       if (notificationId) {

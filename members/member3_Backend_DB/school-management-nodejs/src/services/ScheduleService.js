@@ -110,9 +110,13 @@ export class ScheduleService {
 
   /**
    * Xóa một slot.
+   * Đồng thời xóa khỏi schedule_templates để TimetablePage đồng bộ.
    */
   static async deleteSlot(classId, weekStart, dayOfWeek, period) {
     const count = await ScheduleRepository.deleteSlot(classId, weekStart, dayOfWeek, period);
     if (count === 0) throw new Error('Không tìm thấy tiết học để xóa.');
+
+    // Xóa khỏi schedule_templates để đồng bộ với TimetablePage
+    await ScheduleRepository.deleteTemplateSlot(classId, dayOfWeek, period);
   }
 }

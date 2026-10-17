@@ -36,7 +36,7 @@ export class ReportService {
       rawDistribution,
     ] = await Promise.all([
       ReportRepository.findClosures(semester, schoolYear),
-      ReportRepository.getAcademicRankByGrade(),
+      ReportRepository.getAcademicRankByGrade(semester, schoolYear),
       ReportRepository.getAvgScoreBySubjectAndClass(semester, schoolYear),
       ReportRepository.getSubmissionRateByTeacher(semester, schoolYear),
       ReportRepository.getScoreDistribution(semester, schoolYear),

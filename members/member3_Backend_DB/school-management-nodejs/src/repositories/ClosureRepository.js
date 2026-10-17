@@ -45,8 +45,8 @@ export class ClosureRepository {
   static async updateStatus(classId, semester, schoolYear, status) {
     const res = await queryStrict(
       `UPDATE grade_book_closures
-       SET status      = $4,
-           approved_at = CASE WHEN $4 = 'approved' THEN NOW() ELSE approved_at END
+       SET status      = $4::VARCHAR,
+           approved_at = CASE WHEN $4::VARCHAR = 'approved' THEN NOW() ELSE approved_at END
        WHERE class_id   = $1
          AND semester   = $2
          AND school_year = $3

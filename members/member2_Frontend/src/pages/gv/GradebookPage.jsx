@@ -12,7 +12,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import Modal from '../../components/shared/Modal.jsx';
-import { fetchGradebookPageData, saveGradebookSpreadsheet } from '../../api/stubs.js';
+import {
+  fetchGradebookPageData,
+  saveGradebookSpreadsheet,
+  fetchClosureStatus,
+  submitClosure,
+  requestUnlock,
+} from '../../api/stubs.js';
 import { exportToExcel, exportToPDF } from '../../utils/exportEngine.js';
 import { ROLES } from '../../constants/roles.js';
 
@@ -49,24 +55,23 @@ function computeAverage(entry) {
 
 /**
  * Converts a flat DB gradeRow into the internal gradeMap entry shape.
- * DB: { scoreOral, score15m, score1Hour, scoreMidTerm, scoreFinalTerm, averageScore }
- * Frontend: { oral: [v1, v2], test15min: [v1, v2], test45min: [v], semester: v, average: v }
  *
- * Mapping (consistent with how the save function packs them back):
- *   oral[0]      ← scoreOral
- *   test15min[0] ← score15m
- *   test45min[0] ← score1Hour
- *   semester     ← scoreFinalTerm  (cuối HK hệ số 3)
- *   (scoreMidTerm stored as test45min[1] — thêm cột nếu cần)
+ * DB columns → frontend arrays:
+ *   oral[0]      ← scoreOral    (Miệng lần 1)
+ *   oral[1]      ← scoreOral2   (Miệng lần 2)
+ *   test15min[0] ← score15m     (KT 15' lần 1)
+ *   test15min[1] ← score15m2    (KT 15' lần 2)
+ *   test45min[0] ← score1Hour   (KT 1 tiết lần 1)
+ *   test45min[1] ← scoreMidTerm (KT 1 tiết lần 2 / Giữa HK)
+ *   semester     ← scoreFinalTerm (Cuối HK hệ số 3)
  */
 function dbRowToEntry(row) {
   return {
-    oral:      [row.scoreOral      ?? null, null],
-    test15min: [row.score15m       ?? null, null],
-    test45min: [row.score1Hour     ?? null, row.scoreMidTerm ?? null],
-    semester:  row.scoreFinalTerm  ?? null,
-    average:   row.averageScore    ?? null,
-    // Keep DB id for upsert
+    oral:      [row.scoreOral  ?? null, row.scoreOral2 ?? null],
+    test15min: [row.score15m   ?? null, row.score15m2  ?? null],
+    test45min: [row.score1Hour ?? null, row.scoreMidTerm ?? null],
+    semester:  row.scoreFinalTerm ?? null,
+    average:   row.averageScore   ?? null,
     _id:       row.id ?? null,
   };
 }
@@ -181,7 +186,6 @@ function SkeletonRow({ cols }) {
 
 export default function GradebookPage() {
   const { role, user } = useAuth();
-  const isReadOnly = role === ROLES.BGH;
   const isGVCN     = role === ROLES.GVCN;
 
   // ── Filter state ─────────────────────────────────────────────────────────
@@ -208,10 +212,20 @@ export default function GradebookPage() {
   const [isSaving,    setIsSaving]    = useState(false);
   const [saveMessage, setSaveMessage] = useState(null);
 
+  // ── Closure state ─────────────────────────────────────────────────────────
+  const [closureStatus,       setClosureStatus]       = useState(null);
+  const [isClosureSubmitting, setIsClosureSubmitting] = useState(false);
+  const [isClosureModalOpen,  setIsClosureModalOpen]  = useState(false);
+
   // ── Modal unlock ─────────────────────────────────────────────────────────
   const [isUnlockModalOpen,  setIsUnlockModalOpen]  = useState(false);
   const [unlockReason,       setUnlockReason]       = useState('');
   const [submittingUnlock,   setSubmittingUnlock]   = useState(false);
+
+  // isReadOnly: BGH luôn read-only; GVCN read-only khi đã chốt sổ
+  const isReadOnly = role === ROLES.BGH
+    || closureStatus?.status === 'submitted'
+    || closureStatus?.status === 'locked';
 
   // ── Fetch meta (classes list) on mount ────────────────────────────────────
   useEffect(() => {
@@ -271,6 +285,20 @@ export default function GradebookPage() {
           setGradeRows(data.gradeRows ?? []);
           setGradeMap(buildGradeMapFromRows(data.gradeRows ?? []));
         }
+        // Load closure status cho GVCN
+        if (!cancelled && isGVCN) {
+          try {
+            const closure = await fetchClosureStatus({
+              classId:    selectedClass,
+              semester:   selectedSemester,
+              schoolYear: '2024-2025',
+            });
+            if (!cancelled) setClosureStatus(closure);
+          } catch {
+            // Nếu lỗi thì coi như chưa chốt
+            if (!cancelled) setClosureStatus(null);
+          }
+        }
       } catch (err) {
         if (!cancelled) setError(err.message || 'Không thể tải sổ điểm.');
       } finally {
@@ -280,7 +308,7 @@ export default function GradebookPage() {
 
     load();
     return () => { cancelled = true; };
-  }, [selectedClass, selectedSemester]);
+  }, [selectedClass, selectedSemester]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const classStudents = students; // already filtered by class via API
@@ -353,23 +381,26 @@ export default function GradebookPage() {
     setIsSaving(true);
     setSaveMessage(null);
 
-    // Convert gradeMap → flat items array for API
+    // Lưu toàn bộ student × subject — kể cả ô null
+    // → đảm bảo UPSERT trên server ghi đúng, không bỏ sót bản ghi nào
     const items = [];
     for (const student of classStudents) {
-      const subjEntries = gradeMap[student.id] ?? {};
-      for (const [subjectId, entry] of Object.entries(subjEntries)) {
+      for (const subject of subjects) {
+        const entry = gradeMap[student.id]?.[subject.id] ?? null;
         items.push({
           studentCode:    student.id,
           studentName:    student.name,
           className:      selectedClass,
-          subjectId,             // = subjectName on this page
+          subjectId:      subject.id,
           semester:       selectedSemester,
           schoolYear:     '2024-2025',
-          scoreOral:      entry.oral?.[0]      ?? null,
-          score15m:       entry.test15min?.[0] ?? null,
-          score1Hour:     entry.test45min?.[0] ?? null,
-          scoreMidTerm:   entry.test45min?.[1] ?? null,
-          scoreFinalTerm: entry.semester        ?? null,
+          scoreOral:      entry?.oral?.[0]      ?? null,
+          scoreOral2:     entry?.oral?.[1]      ?? null,
+          score15m:       entry?.test15min?.[0] ?? null,
+          score15m2:      entry?.test15min?.[1] ?? null,
+          score1Hour:     entry?.test45min?.[0] ?? null,
+          scoreMidTerm:   entry?.test45min?.[1] ?? null,
+          scoreFinalTerm: entry?.semester        ?? null,
         });
       }
     }
@@ -429,12 +460,44 @@ export default function GradebookPage() {
     e.preventDefault();
     if (!unlockReason.trim()) return;
     setSubmittingUnlock(true);
-    setTimeout(() => {
-      setSubmittingUnlock(false);
-      setIsUnlockModalOpen(false);
-      setUnlockReason('');
-      setSaveMessage({ type: 'success', text: 'Đã gửi đơn xin mở khóa sổ điểm / phúc khảo tới Ban Giám Hiệu phê duyệt thành công!' });
-    }, 600);
+    requestUnlock({
+      classId:    selectedClass,
+      className:  selectedClass,
+      gvcnName:   user?.fullName || user?.full_name || '',
+      semester:   selectedSemester,
+      schoolYear: '2024-2025',
+      reason:     unlockReason,
+    })
+      .then(() => {
+        setSubmittingUnlock(false);
+        setIsUnlockModalOpen(false);
+        setUnlockReason('');
+        setSaveMessage({ type: 'success', text: 'Đã gửi đơn xin mở khóa sổ điểm tới Ban Giám Hiệu phê duyệt thành công!' });
+      })
+      .catch((err) => {
+        setSubmittingUnlock(false);
+        setSaveMessage({ type: 'error', text: err.message || 'Gửi đơn thất bại. Vui lòng thử lại.' });
+      });
+  }
+
+  async function handleSubmitClosure() {
+    setIsClosureSubmitting(true);
+    try {
+      const result = await submitClosure({
+        classId:    selectedClass,
+        className:  selectedClass,
+        gvcnName:   user?.fullName || user?.full_name || '',
+        semester:   selectedSemester,
+        schoolYear: '2024-2025',
+      });
+      setClosureStatus(result);
+      setIsClosureModalOpen(false);
+      setSaveMessage({ type: 'success', text: 'Chốt sổ điểm thành công! Sổ điểm đã được gửi cho Ban Giám Hiệu ký duyệt.' });
+    } catch (err) {
+      setSaveMessage({ type: 'error', text: err.message || 'Chốt sổ điểm thất bại. Vui lòng thử lại.' });
+    } finally {
+      setIsClosureSubmitting(false);
+    }
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -453,17 +516,31 @@ export default function GradebookPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {isReadOnly && (
+          {isReadOnly && role === ROLES.BGH && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#fff7ed] text-[#c2410c] border border-[#fdba74] text-label-sm font-medium">
               <span className="material-symbols-outlined text-[16px]">visibility</span>
               Chế độ xem (BGH)
             </span>
+          )}
+          {isGVCN && !closureStatus && (
+            <button type="button" onClick={() => setIsClosureModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#f59e0b] hover:bg-[#d97706] text-white text-body-sm font-medium transition-all">
+              <span className="material-symbols-outlined text-[18px]">lock</span>
+              Chốt sổ điểm
+            </button>
           )}
           {!isReadOnly && (
             <button type="button" onClick={() => setIsUnlockModalOpen(true)}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#fff7ed] hover:bg-[#ffedd5] text-[#c2410c] border border-[#fdba74] text-body-sm font-medium transition-all">
               <span className="material-symbols-outlined text-[18px]">lock_open</span>
               Xin mở khóa / Phúc khảo
+            </button>
+          )}
+          {isGVCN && isReadOnly && closureStatus && (
+            <button type="button" onClick={() => setIsUnlockModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#fff7ed] hover:bg-[#ffedd5] text-[#c2410c] border border-[#fdba74] text-body-sm font-medium transition-all">
+              <span className="material-symbols-outlined text-[18px]">lock_open</span>
+              Xin mở khóa
             </button>
           )}
           <button type="button" onClick={handleExportExcel} disabled={loading}
@@ -487,6 +564,23 @@ export default function GradebookPage() {
           <button className="text-label-sm underline" onClick={() => { setError(null); if (selectedClass) { setLoading(true); fetchGradebookPageData({ className: selectedClass, semester: selectedSemester, schoolYear: '2024-2025' }).then((d) => { setStudents(d.students); setGradeRows(d.gradeRows); setGradeMap(buildGradeMapFromRows(d.gradeRows)); }).catch((e) => setError(e.message)).finally(() => setLoading(false)); } }}>
             Thử lại
           </button>
+        </div>
+      )}
+
+      {/* ── Closure Banner ── */}
+      {isGVCN && closureStatus?.status === 'submitted' && (
+        <div className="flex items-center gap-3 p-4 rounded-lg bg-[#fef9c3] border border-[#fde68a] text-[#854d0e]" role="status">
+          <span className="material-symbols-outlined text-[20px]">lock</span>
+          <p className="text-body-sm font-medium flex-1">
+            Sổ điểm đã chốt – chỉ xem.{' '}
+            <span className="font-normal">Chờ BGH ký duyệt.</span>
+          </p>
+        </div>
+      )}
+      {isGVCN && closureStatus?.status === 'locked' && (
+        <div className="flex items-center gap-3 p-4 rounded-lg bg-[#fef2f2] border border-[#fecaca] text-[#b91c1c]" role="status">
+          <span className="material-symbols-outlined text-[20px]">lock</span>
+          <p className="text-body-sm font-medium flex-1">Sổ điểm đã chốt – chỉ xem.</p>
         </div>
       )}
 
@@ -737,6 +831,41 @@ export default function GradebookPage() {
           </button>
         </div>
       )}
+
+      {/* ── Modal xác nhận chốt sổ điểm ── */}
+      <Modal
+        isOpen={isClosureModalOpen}
+        onClose={() => !isClosureSubmitting && setIsClosureModalOpen(false)}
+        title="Xác nhận chốt sổ điểm"
+        size="sm"
+      >
+        <div className="flex flex-col items-center text-center gap-4 py-2">
+          <div className="w-14 h-14 rounded-full bg-[#fff7ed] flex items-center justify-center">
+            <span className="material-symbols-outlined text-[32px] text-[#f59e0b]" aria-hidden="true">lock</span>
+          </div>
+          <div className="space-y-2">
+            <p className="text-body-md font-semibold text-[#0f172a]">Chốt sổ điểm lớp {selectedClass}</p>
+            <p className="text-body-sm text-[#64748b] leading-relaxed">
+              Sau khi chốt sổ, <strong className="text-[#0b1c30]">điểm sẽ không thể chỉnh sửa</strong> trừ khi BGH duyệt đơn mở khóa.
+              Hành động này sẽ gửi sổ điểm tới Ban Giám Hiệu để ký duyệt.
+            </p>
+          </div>
+          <div className="flex gap-3 w-full pt-2 border-t border-[#f1f5f9]">
+            <button type="button" onClick={() => setIsClosureModalOpen(false)} disabled={isClosureSubmitting}
+              className="flex-1 px-4 py-2.5 rounded-lg border border-[#e2e8f0] text-[#475569] text-body-sm font-medium hover:bg-[#f8fafc] disabled:opacity-60 transition-colors">
+              Hủy
+            </button>
+            <button type="button" onClick={handleSubmitClosure} disabled={isClosureSubmitting}
+              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#f59e0b] hover:bg-[#d97706] disabled:opacity-60 disabled:cursor-not-allowed text-white text-body-sm font-semibold transition-all">
+              {isClosureSubmitting ? (
+                <><span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>Đang chốt...</>
+              ) : (
+                <><span className="material-symbols-outlined text-[18px]">lock</span>Chốt sổ</>
+              )}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* ── Modal mở khóa / phúc khảo ── */}
       <Modal

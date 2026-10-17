@@ -42,6 +42,9 @@ import StudentAttendancePage from '../pages/student/StudentAttendancePage.jsx';
 import StudentSchedulePage from '../pages/student/StudentSchedulePage.jsx';
 import StudentExamsPage from '../pages/student/StudentExamsPage.jsx';
 
+// Notifications
+import NotificationsPage from '../pages/notifications/NotificationsPage.jsx';
+
 export default function AppRouter() {
   const { isAuthenticated, role } = useAuth();
 
@@ -114,6 +117,11 @@ export default function AppRouter() {
           <Route path={ROUTES.STUDENT_ATTENDANCE} element={<StudentAttendancePage />} />
           <Route path={ROUTES.STUDENT_SCHEDULE} element={<StudentSchedulePage />} />
           <Route path={ROUTES.STUDENT_EXAMS} element={<StudentExamsPage />} />
+        </Route>
+
+        {/* Notifications — BGH & GVCN */}
+        <Route element={<ProtectedRoute roles={[ROLES.BGH, ROLES.GVCN]} />}>
+          <Route path={ROUTES.NOTIFICATIONS} element={<NotificationsPage />} />
         </Route>
       </Route>
 

@@ -359,6 +359,93 @@ export const deleteUser = async (id) => {
   return data.data;
 };
 
+// ── Closure (Chốt sổ điểm) API ────────────────────────────────────────────────
+
+/**
+ * Lấy trạng thái chốt sổ của một lớp.
+ * @param {{ classId: string, semester: string, schoolYear: string }}
+ * @returns closure object hoặc null nếu chưa có
+ */
+export const fetchClosureStatus = async ({ classId, semester, schoolYear }) => {
+  try {
+    const qs = new URLSearchParams({ classId, semester, schoolYear }).toString();
+    const data = await apiClient(`/gradebook/closure?${qs}`);
+    return data?.data ?? null;
+  } catch (err) {
+    // 404 nghĩa là chưa có bản ghi → trả null
+    if (err?.status === 404 || String(err?.message).includes('404')) return null;
+    throw err;
+  }
+};
+
+/**
+ * Chốt sổ điểm.
+ * @param {{ classId, className, gvcnName, semester, schoolYear }}
+ * @returns closure DTO
+ */
+export const submitClosure = async ({ classId, className, gvcnName, semester, schoolYear }) => {
+  const data = await apiClient('/gradebook/closure/submit', {
+    method: 'POST',
+    body: { classId, className, gvcnName, semester, schoolYear },
+  });
+  if (!data?.success) throw new Error(data?.message || 'Chốt sổ điểm thất bại');
+  return data.data;
+};
+
+/**
+ * Gửi đơn xin mở khóa sổ điểm.
+ * @param {{ classId, className, gvcnName, semester, schoolYear, reason }}
+ */
+export const requestUnlock = async ({ classId, className, gvcnName, semester, schoolYear, reason }) => {
+  const data = await apiClient('/gradebook/closure/request-unlock', {
+    method: 'POST',
+    body: { classId, className, gvcnName, semester, schoolYear, reason },
+  });
+  if (!data?.success) throw new Error(data?.message || 'Gửi đơn xin mở khóa thất bại');
+  return data;
+};
+
+// ── Notifications API ─────────────────────────────────────────────────────────
+
+/**
+ * Lấy danh sách thông báo của user hiện tại.
+ * @returns {Array}
+ */
+export const fetchNotifications = async () => {
+  const data = await apiClient('/notifications');
+  return data?.data ?? [];
+};
+
+/**
+ * Lấy số thông báo chưa đọc.
+ * @returns {number}
+ */
+export const fetchUnreadCount = async () => {
+  const data = await apiClient('/notifications/unread-count');
+  return data?.count ?? 0;
+};
+
+/**
+ * Đánh dấu thông báo đã đọc.
+ * @param {string|number} id
+ */
+export const markNotificationRead = async (id) => {
+  await apiClient(`/notifications/${id}/read`, { method: 'PATCH' });
+};
+
+/**
+ * BGH duyệt mở khóa sổ điểm.
+ * @param {{ notificationId, classId, className, gvcnUsername, semester, schoolYear }}
+ */
+export const approveBGHUnlock = async ({ notificationId, classId, className, gvcnUsername, semester, schoolYear }) => {
+  const data = await apiClient('/reports/bgh/approve-unlock', {
+    method: 'POST',
+    body: { notificationId, classId, className, gvcnUsername, semester, schoolYear },
+  });
+  if (!data?.success) throw new Error(data?.message || 'Duyệt mở khóa thất bại');
+  return data;
+};
+
 // ── Communication API (Sổ liên lạc) ──────────────────────────────────────────
 
 /**

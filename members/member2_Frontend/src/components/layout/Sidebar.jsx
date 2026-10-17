@@ -1,43 +1,83 @@
+import { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth, hasPermission } from '../../context/AuthContext.jsx';
 import { ROLES } from '../../constants/roles.js';
 import { ROUTES } from '../../constants/routes.js';
+import { fetchUnreadCount } from '../../api/stubs.js';
 
+/**
+ * moduleId phải khớp với key trong DEFAULT_PERMISSIONS của AuthContext.
+ * Nếu item không có moduleId → không kiểm tra quyền, chỉ lọc theo role.
+ *
+ * Các giá trị hợp lệ: 'gradebook' | 'attendance' | 'schedule' | 'reports' | 'settings'
+ */
 const NAV_ITEMS = [
-  // Role 1: BGH
+  // ── BGH ────────────────────────────────────────────────────────────────────
   { label: 'Tổng quan Ban Giám Hiệu', icon: 'admin_panel_settings', path: ROUTES.BGH_DASHBOARD,        roles: [ROLES.BGH] },
-  { label: 'Giám sát chuyên cần',    icon: 'monitoring',           path: ROUTES.BGH_ATTENDANCE,       roles: [ROLES.BGH] },
-  { label: 'Xếp thời khóa biểu',    icon: 'edit_calendar',        path: ROUTES.BGH_SCHEDULE_ADMIN,   roles: [ROLES.BGH] },
-  { label: 'Trung tâm Báo cáo',      icon: 'assessment',           path: ROUTES.BGH_REPORTS,          roles: [ROLES.BGH] },
-  { label: 'Cài đặt & Phân quyền',   icon: 'settings',             path: ROUTES.BGH_SETTINGS,         roles: [ROLES.BGH] },
+  { label: 'Giám sát chuyên cần',     icon: 'monitoring',           path: ROUTES.BGH_ATTENDANCE,       roles: [ROLES.BGH], moduleId: 'attendance' },
+  { label: 'Xếp thời khóa biểu',     icon: 'edit_calendar',        path: ROUTES.BGH_SCHEDULE_ADMIN,   roles: [ROLES.BGH], moduleId: 'schedule'   },
+  { label: 'Trung tâm Báo cáo',       icon: 'assessment',           path: ROUTES.BGH_REPORTS,          roles: [ROLES.BGH], moduleId: 'reports'    },
+  { label: 'Cài đặt & Phân quyền',    icon: 'settings',             path: ROUTES.BGH_SETTINGS,         roles: [ROLES.BGH], moduleId: 'settings'   },
 
-  // Role 2: GVCN
+  // ── GVCN ───────────────────────────────────────────────────────────────────
   { label: 'Tổng quan Lớp Chủ Nhiệm', icon: 'dashboard',            path: ROUTES.GVCN_DASHBOARD,       roles: [ROLES.GVCN] },
-  
-  // Role 3: GV
-  { label: 'Tổng quan Giảng Dạy',    icon: 'dashboard',            path: ROUTES.GV_DASHBOARD,         roles: [ROLES.GV] },
 
-  // Shared GV & GVCN
-  { label: 'Học sinh & Hồ sơ',       icon: 'groups',               path: ROUTES.STUDENTS,             roles: [ROLES.GV, ROLES.GVCN, ROLES.BGH] },
-  { label: 'Sổ điểm điện tử',       icon: 'grade',                path: ROUTES.GRADEBOOK,            roles: [ROLES.GV, ROLES.GVCN, ROLES.BGH] },
-  { label: 'Điểm danh học sinh',    icon: 'how_to_reg',           path: ROUTES.ATTENDANCE,           roles: [ROLES.GV, ROLES.GVCN] },
-  { label: 'Thời khóa biểu',        icon: 'calendar_month',       path: ROUTES.SCHEDULE,             roles: [ROLES.GV, ROLES.GVCN] },
-  { label: 'Sổ liên lạc & Duyệt phép', icon: 'chat',               path: ROUTES.PARENT_COMMUNICATION, roles: [ROLES.GVCN, ROLES.BGH] },
+  // ── GV ─────────────────────────────────────────────────────────────────────
+  { label: 'Tổng quan Giảng Dạy',     icon: 'dashboard',            path: ROUTES.GV_DASHBOARD,         roles: [ROLES.GV] },
 
-  // Role 5: PH
-  { label: 'Cổng Phụ Huynh',         icon: 'family_restroom',      path: ROUTES.PARENT_DASHBOARD,     roles: [ROLES.PH] },
-  { label: 'Sổ liên lạc & Học phí',  icon: 'contact_mail',         path: ROUTES.PARENT_COMMUNICATION, roles: [ROLES.PH] },
+  // ── Shared GV & GVCN & BGH ─────────────────────────────────────────────────
+  { label: 'Học sinh & Hồ sơ',        icon: 'groups',               path: ROUTES.STUDENTS,             roles: [ROLES.GV, ROLES.GVCN, ROLES.BGH] },
+  { label: 'Sổ điểm điện tử',        icon: 'grade',                path: ROUTES.GRADEBOOK,            roles: [ROLES.GV, ROLES.GVCN, ROLES.BGH], moduleId: 'gradebook'  },
+  { label: 'Điểm danh học sinh',     icon: 'how_to_reg',           path: ROUTES.ATTENDANCE,           roles: [ROLES.GV, ROLES.GVCN],            moduleId: 'attendance' },
+  { label: 'Thời khóa biểu',         icon: 'calendar_month',       path: ROUTES.SCHEDULE,             roles: [ROLES.GV, ROLES.GVCN],            moduleId: 'schedule'   },
+  { label: 'Sổ liên lạc & Duyệt phép', icon: 'chat',              path: ROUTES.PARENT_COMMUNICATION, roles: [ROLES.GVCN, ROLES.BGH] },
+  { label: 'Thông báo',               icon: 'notifications',       path: ROUTES.NOTIFICATIONS,        roles: [ROLES.BGH, ROLES.GVCN] },
 
-  // Shared HS & PH
-  { label: 'Bảng điểm & GPA con em', icon: 'grade',                path: ROUTES.STUDENT_GRADEBOOK,    roles: [ROLES.HS, ROLES.PH] },
-  { label: 'Thời khóa biểu học',     icon: 'calendar_today',       path: ROUTES.STUDENT_SCHEDULE,     roles: [ROLES.HS, ROLES.PH] },
-  { label: 'Lịch kiểm tra & Thi',    icon: 'assignment',           path: ROUTES.STUDENT_EXAMS,        roles: [ROLES.HS, ROLES.PH] },
-  { label: 'Chuyên cần học sinh',    icon: 'check_circle',         path: ROUTES.STUDENT_ATTENDANCE,   roles: [ROLES.HS, ROLES.PH] },
+  // ── PH ─────────────────────────────────────────────────────────────────────
+  { label: 'Cổng Phụ Huynh',          icon: 'family_restroom',      path: ROUTES.PARENT_DASHBOARD,     roles: [ROLES.PH] },
+  { label: 'Sổ liên lạc & Học phí',   icon: 'contact_mail',         path: ROUTES.PARENT_COMMUNICATION, roles: [ROLES.PH] },
+
+  // ── Shared HS & PH ─────────────────────────────────────────────────────────
+  { label: 'Bảng điểm & GPA con em',  icon: 'grade',                path: ROUTES.STUDENT_GRADEBOOK,    roles: [ROLES.HS, ROLES.PH], moduleId: 'gradebook'  },
+  { label: 'Thời khóa biểu học',      icon: 'calendar_today',       path: ROUTES.STUDENT_SCHEDULE,     roles: [ROLES.HS, ROLES.PH], moduleId: 'schedule'   },
+  { label: 'Lịch kiểm tra & Thi',     icon: 'assignment',           path: ROUTES.STUDENT_EXAMS,        roles: [ROLES.HS, ROLES.PH] },
+  { label: 'Chuyên cần học sinh',     icon: 'check_circle',         path: ROUTES.STUDENT_ATTENDANCE,   roles: [ROLES.HS, ROLES.PH], moduleId: 'attendance' },
 ];
 
 export default function Sidebar({ isCollapsed, onToggle }) {
-  const { role } = useAuth();
-  const visibleItems = NAV_ITEMS.filter(item => item.roles.includes(role));
+  const { role, permissions } = useAuth();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    // 1. Kiểm tra role
+    if (!item.roles.includes(role)) return false;
+    // 2. Kiểm tra permission (nếu item có moduleId)
+    if (item.moduleId && !hasPermission(permissions, item.moduleId, role)) return false;
+    return true;
+  });
+
+  // Polling unread count mỗi 30 giây cho GVCN và BGH
+  useEffect(() => {
+    if (role !== ROLES.BGH && role !== ROLES.GVCN) return;
+
+    let cancelled = false;
+
+    async function updateCount() {
+      try {
+        const count = await fetchUnreadCount();
+        if (!cancelled) setUnreadCount(count ?? 0);
+      } catch {
+        // Bỏ qua lỗi — badge sẽ không hiện
+      }
+    }
+
+    updateCount();
+    const timer = setInterval(updateCount, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [role]);
 
   return (
     <aside
@@ -59,12 +99,12 @@ export default function Sidebar({ isCollapsed, onToggle }) {
 
       {/* Nav items */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5">
-        {visibleItems.map(item => (
+        {visibleItems.map((item) => (
           <NavLink
             key={item.path + item.label}
             to={item.path}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-label-md font-medium ${
+              `relative flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-label-md font-medium ${
                 isActive
                   ? 'bg-[#004ac6] text-white'
                   : 'text-[#475569] hover:bg-[#f1f5f9] hover:text-[#0f172a]'
@@ -73,7 +113,15 @@ export default function Sidebar({ isCollapsed, onToggle }) {
             title={isCollapsed ? item.label : undefined}
           >
             <span className="material-symbols-outlined text-[20px] shrink-0">{item.icon}</span>
-            {!isCollapsed && <span className="truncate">{item.label}</span>}
+            {!isCollapsed && <span className="truncate flex-1">{item.label}</span>}
+            {!isCollapsed && item.path === ROUTES.NOTIFICATIONS && unreadCount > 0 && (
+              <span className="ml-auto shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-[#dc2626] text-white text-[11px] font-bold flex items-center justify-center leading-none">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+            {isCollapsed && item.path === ROUTES.NOTIFICATIONS && unreadCount > 0 && (
+              <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-[#dc2626] border-2 border-white" />
+            )}
           </NavLink>
         ))}
       </nav>

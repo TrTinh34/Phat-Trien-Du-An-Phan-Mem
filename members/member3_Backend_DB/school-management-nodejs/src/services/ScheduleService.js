@@ -61,11 +61,23 @@ export class ScheduleService {
 
   /**
    * Lưu (upsert) một slot. Trả về slot đã lưu dưới dạng DTO.
+   * Đồng thời sync vào schedule_templates (lịch cố định hàng tuần).
    * @param {object} slot
    */
   static async saveSlot(slot) {
     const saved = await ScheduleRepository.upsert(slot);
     if (!saved) throw new Error('Không thể lưu tiết học. Vui lòng kiểm tra kết nối DB.');
+
+    // Sync vào schedule_templates (lịch cố định hàng tuần)
+    await ScheduleRepository.upsertTemplate({
+      classId:     slot.classId,
+      dayOfWeek:   slot.dayOfWeek,
+      period:      slot.period,
+      subjectName: slot.subjectName,
+      teacherName: slot.teacherName,
+      room:        slot.room,
+    });
+
     return {
       id:          saved.id,
       classId:     saved.class_id,
@@ -77,6 +89,23 @@ export class ScheduleService {
       room:        saved.room,
       timeRange:   saved.time_range || '',
     };
+  }
+
+  /**
+   * Lấy lịch cố định hàng tuần (schedule_templates) của một lớp.
+   * @param {string} classId
+   */
+  static async getTemplatesByClass(classId) {
+    const rows = await ScheduleRepository.findTemplatesByClass(classId);
+    return rows.map((row) => ({
+      id:          row.id,
+      classId:     row.class_id,
+      dayOfWeek:   row.day_of_week,
+      period:      row.period,
+      subjectName: row.subject_name,
+      teacherName: row.teacher_name,
+      room:        row.room,
+    }));
   }
 
   /**

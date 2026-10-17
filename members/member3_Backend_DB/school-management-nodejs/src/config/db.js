@@ -223,6 +223,25 @@ export async function initDatabaseSchema() {
       ALTER TABLE notifications ADD COLUMN IF NOT EXISTS related_semester VARCHAR(10);
     `);
 
+    // ===== Schedule Templates: lịch cố định hàng tuần (không gắn tuần cụ thể) =====
+    await query(`
+      CREATE TABLE IF NOT EXISTS schedule_templates (
+        id           SERIAL PRIMARY KEY,
+        class_id     VARCHAR(30) NOT NULL,
+        day_of_week  INT NOT NULL CHECK (day_of_week BETWEEN 1 AND 7),
+        period       INT NOT NULL CHECK (period BETWEEN 1 AND 10),
+        subject_name VARCHAR(100),
+        teacher_name VARCHAR(100),
+        room         VARCHAR(50),
+        created_at   TIMESTAMPTZ DEFAULT NOW(),
+        updated_at   TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (class_id, day_of_week, period)
+      );
+      ALTER TABLE schedule_templates ADD COLUMN IF NOT EXISTS subject_name VARCHAR(100);
+      ALTER TABLE schedule_templates ADD COLUMN IF NOT EXISTS teacher_name VARCHAR(100);
+      ALTER TABLE schedule_templates ADD COLUMN IF NOT EXISTS room VARCHAR(50);
+    `);
+
     // Backfill homeroom_teacher_id từ gvcn_name → users.full_name (prefix match)
     // Seeder lưu full_name = 'Lê Minh Châu (GVCN 10A1)', còn school_classes.gvcn_name = 'Lê Minh Châu'
     // Chỉ cập nhật các hàng homeroom_teacher_id IS NULL để không ghi đè phân công hợp lệ

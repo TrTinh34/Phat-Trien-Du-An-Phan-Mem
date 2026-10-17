@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { ROLES } from '../../constants/roles.js';
-import { fetchAttendance, fetchClasses, handleSaveAttendance, fetchSchedulePageData, fetchStudents } from '../../api/stubs.js';
+import { fetchAttendance, fetchClasses, handleSaveAttendance, fetchSchedulePageData, fetchStudents, fetchScheduleTemplates } from '../../api/stubs.js';
 import StatusBadge from '../../components/shared/StatusBadge.jsx';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -156,13 +156,14 @@ export default function AttendancePage() {
 
     Promise.all([
       fetchAttendance(selectedClass, selectedDate).catch(() => null),
-      fetchSchedulePageData(selectedClass, weekStart).catch(() => null),
-    ]).then(async ([attendanceRecords, scheduleData]) => {
+      fetchScheduleTemplates(selectedClass).catch(() => []),
+    ]).then(async ([attendanceRecords, templateSlots]) => {
       if (cancelled) return;
 
-      // Kiểm tra ngày hôm đó có tiết học không
-      const slots = scheduleData?.slots ?? [];
-      const hasSlotToday = slots.some((s) => Number(s.dayOfWeek) === dayOfWeekSchema);
+      // Kiểm tra ngày hôm đó có tiết học không — dùng template (không phụ thuộc tuần)
+      const hasSlotToday = templateSlots.length === 0
+        ? true  // Nếu chưa có template nào → không chặn (cho phép điểm danh)
+        : templateSlots.some((s) => Number(s.dayOfWeek) === dayOfWeekSchema);
 
       if (!hasSlotToday) {
         // Không có tiết học hôm nay

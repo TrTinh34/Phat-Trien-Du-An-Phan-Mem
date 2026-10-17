@@ -84,4 +84,47 @@ export class ScheduleRepository {
     if (!res) return [];
     return res.rows.map((r) => r.full_name);
   }
+
+  /**
+   * Upsert một slot vào schedule_templates (lịch cố định, không gắn tuần).
+   */
+  static async upsertTemplate({ classId, dayOfWeek, period, subjectName, teacherName, room }) {
+    const res = await query(
+      `INSERT INTO schedule_templates (class_id, day_of_week, period, subject_name, teacher_name, room, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       ON CONFLICT (class_id, day_of_week, period)
+       DO UPDATE SET
+         subject_name = EXCLUDED.subject_name,
+         teacher_name = EXCLUDED.teacher_name,
+         room         = EXCLUDED.room,
+         updated_at   = NOW()
+       RETURNING *`,
+      [classId, dayOfWeek, period, subjectName, teacherName, room]
+    );
+    if (!res) return null;
+    return res.rows[0];
+  }
+
+  /**
+   * Lấy tất cả slots trong schedule_templates của một lớp.
+   */
+  static async findTemplatesByClass(classId) {
+    const res = await query(
+      `SELECT * FROM schedule_templates WHERE class_id = $1 ORDER BY day_of_week ASC, period ASC`,
+      [classId]
+    );
+    if (!res) return [];
+    return res.rows;
+  }
+
+  /**
+   * Xóa một slot trong schedule_templates.
+   */
+  static async deleteTemplateSlot(classId, dayOfWeek, period) {
+    const res = await query(
+      `DELETE FROM schedule_templates WHERE class_id = $1 AND day_of_week = $2 AND period = $3`,
+      [classId, dayOfWeek, period]
+    );
+    return res ? res.rowCount : 0;
+  }
 }

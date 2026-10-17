@@ -260,6 +260,22 @@ export const handleDeleteScheduleSlot = async ({ classId, weekStart, dayOfWeek, 
   if (!data?.success) throw new Error(data?.message || 'Lỗi khi xóa tiết học');
   return data;
 };
+
+/**
+ * Lấy lịch cố định hàng tuần (schedule_templates) của một lớp.
+ * Không phụ thuộc vào tuần cụ thể.
+ * @param {string} classId
+ * @returns {Array<{ id, classId, dayOfWeek, period, subjectName, teacherName, room }>}
+ */
+export const fetchScheduleTemplates = async (classId) => {
+  try {
+    const data = await apiClient(`/schedules/templates?classId=${encodeURIComponent(classId)}`);
+    if (data?.success) return data.templates ?? [];
+  } catch {
+    console.info('[API Fallback] Không lấy được schedule templates, bỏ qua kiểm tra lịch.');
+  }
+  return [];
+};
 export const handleCreateUser       = createStub('handleCreateUser', '/users/create');
 export const handleUpdateUser       = createStub('handleUpdateUser', '/users/update');
 export const handleDeactivateUser   = createStub('handleDeactivateUser', '/users/deactivate');

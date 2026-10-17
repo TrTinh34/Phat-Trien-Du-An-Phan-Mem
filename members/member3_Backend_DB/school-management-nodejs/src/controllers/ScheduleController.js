@@ -68,4 +68,22 @@ export class ScheduleController {
       return res.status(500).json({ success: false, message: err.message });
     }
   }
+
+  /**
+   * GET /api/schedules/templates?classId=10A1
+   * Trả về lịch cố định hàng tuần của một lớp.
+   */
+  static async getTemplates(req, res) {
+    try {
+      const { classId } = req.query;
+      if (!classId) {
+        return res.status(400).json({ success: false, message: 'Thiếu tham số classId' });
+      }
+      const templates = await ScheduleService.getTemplatesByClass(classId);
+      return res.json({ success: true, templates });
+    } catch (err) {
+      console.error('[ScheduleController] getTemplates error:', err);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  }
 }

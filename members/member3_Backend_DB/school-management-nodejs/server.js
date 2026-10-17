@@ -115,7 +115,8 @@ app.get('/api/dashboard/bgh',  authenticateToken, DashboardController.getBGHDash
 app.get('/api/dashboard/gvcn', authenticateToken, DashboardController.getGVCNDashboard);
 app.patch('/api/dashboard/gvcn/leave-requests/:id', authenticateToken, DashboardController.processLeaveRequest);
 
-// Schedule Routes
+// Schedule Routes (templates PHẢI đứng trước base route để tránh conflict)
+app.get('/api/schedules/templates', authenticateToken, ScheduleController.getTemplates);
 app.get('/api/schedules',    authenticateToken, ScheduleController.getSchedulePageData);
 app.post('/api/schedules',   authenticateToken, ScheduleController.saveSlot);
 app.delete('/api/schedules', authenticateToken, ScheduleController.deleteSlot);

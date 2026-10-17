@@ -195,6 +195,32 @@ export async function initDatabaseSchema() {
         ON password_reset_tokens (user_id);
 
       ALTER TABLE school_classes ADD COLUMN IF NOT EXISTS homeroom_teacher_id INTEGER REFERENCES users(id);
+
+      -- UNIQUE constraint để UPSERT grade_books hoạt động đúng (tránh duplicate rows)
+      ALTER TABLE grade_books
+        ADD COLUMN IF NOT EXISTS school_year VARCHAR(20);
+      ALTER TABLE grade_books
+        ADD COLUMN IF NOT EXISTS score_oral_2 NUMERIC(3,1);
+      ALTER TABLE grade_books
+        ADD COLUMN IF NOT EXISTS score_15m_2  NUMERIC(3,1);
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'uq_grade_books_student_subject_class_sem_year'
+        ) THEN
+          ALTER TABLE grade_books
+            ADD CONSTRAINT uq_grade_books_student_subject_class_sem_year
+            UNIQUE (student_code, subject_name, class_name, semester, school_year);
+        END IF;
+      END $$;
+    `);
+
+    // ===== Notifications: thêm cột mới cho hệ thống chốt sổ điểm =====
+    await query(`
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS sender_role VARCHAR(30);
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS related_class VARCHAR(30);
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS related_semester VARCHAR(10);
     `);
 
     // Backfill homeroom_teacher_id từ gvcn_name → users.full_name (prefix match)

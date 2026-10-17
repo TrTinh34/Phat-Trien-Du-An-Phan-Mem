@@ -1,4 +1,6 @@
 import { ReportService } from '../services/ReportService.js';
+import { NotificationService } from '../services/NotificationService.js';
+import { ClosureRepository } from '../repositories/ClosureRepository.js';
 
 /**
  * ReportController — Tầng HTTP cho trang Báo cáo BGH.
@@ -64,6 +66,47 @@ export class ReportController {
       });
     } catch (err) {
       console.error('[ReportController] lockAll error:', err);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  }
+
+  /**
+   * POST /api/reports/bgh/approve-unlock
+   * Body: { notificationId, classId, className, gvcnUsername, semester, schoolYear }
+   * BGH duyệt yêu cầu mở khóa sổ điểm.
+   */
+  static async approveBGHUnlock(req, res) {
+    try {
+      const { notificationId, classId, className, gvcnUsername, semester, schoolYear } = req.body;
+      if (!classId || !semester || !schoolYear || !gvcnUsername) {
+        return res.status(400).json({
+          success: false,
+          message: 'Thiếu tham số: classId, semester, schoolYear, gvcnUsername',
+        });
+      }
+
+      // Reset closure về 'submitted' để GVCN có thể chỉnh sửa lại
+      await ClosureRepository.updateStatus(classId, semester, schoolYear, 'submitted');
+
+      // Đánh dấu notification đã xử lý nếu có
+      if (notificationId) {
+        await NotificationService.markRead(notificationId);
+      }
+
+      // Gửi notification cho GVCN biết đã được duyệt
+      await NotificationService.notify({
+        title:           `BGH đã duyệt mở khóa sổ điểm lớp ${className ?? classId}`,
+        type:            'unlock_approved',
+        senderId:        req.user?.username,
+        senderRole:      'BGH',
+        recipients:      [gvcnUsername],
+        relatedClass:    classId,
+        relatedSemester: semester,
+      });
+
+      return res.json({ success: true, message: 'Đã duyệt mở khóa sổ điểm thành công.' });
+    } catch (err) {
+      console.error('[ReportController] approveBGHUnlock error:', err);
       return res.status(500).json({ success: false, message: err.message });
     }
   }

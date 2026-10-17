@@ -18,6 +18,8 @@ import { ReportController } from './src/controllers/ReportController.js';
 import { UserController } from './src/controllers/UserController.js';
 import { CommunicationController } from './src/controllers/CommunicationController.js';
 import { SettingsController } from './src/controllers/SettingsController.js';
+import { ClosureController } from './src/controllers/ClosureController.js';
+import { NotificationController } from './src/controllers/NotificationController.js';
 import { authenticateToken } from './src/middleware/authMiddleware.js';
 import { resolveGvcnClass } from './src/middleware/dataAccessMiddleware.js';
 import { forgotPasswordLimiter, resetPasswordLimiter } from './src/middleware/rateLimiters.js';
@@ -45,7 +47,7 @@ app.use(cors({
     'http://127.0.0.1:5174',
   ],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(express.json());
@@ -74,6 +76,11 @@ app.get('/api/students/:id',  authenticateToken, resolveGvcnClass, StudentContro
 app.post('/api/students',     authenticateToken, resolveGvcnClass, StudentController.createStudent);
 app.put('/api/students/:id',  authenticateToken, resolveGvcnClass, StudentController.updateStudent);
 app.post('/api/students/:id/calculate-gpa', authenticateToken, StudentController.calculateGPA);
+
+// GradeBook Closure & Unlock Routes (MUST be before generic /api/gradebook routes)
+app.get('/api/gradebook/closure',                authenticateToken, ClosureController.getStatus);
+app.post('/api/gradebook/closure/submit',        authenticateToken, ClosureController.submitClosure);
+app.post('/api/gradebook/closure/request-unlock', authenticateToken, ClosureController.requestUnlock);
 
 // GradeBook Routes
 app.get('/api/gradebook',               authenticateToken, resolveGvcnClass, GradeBookController.getGradeBook);
@@ -117,6 +124,12 @@ app.delete('/api/schedules', authenticateToken, ScheduleController.deleteSlot);
 app.get('/api/reports/bgh',             authenticateToken, ReportController.getReportData);
 app.post('/api/reports/bgh/approve',    authenticateToken, ReportController.approveClass);
 app.post('/api/reports/bgh/lock-all',   authenticateToken, ReportController.lockAll);
+app.post('/api/reports/bgh/approve-unlock', authenticateToken, requireBGH, ReportController.approveBGHUnlock);
+
+// Notification Routes (unread-count BEFORE :id to avoid route conflict)
+app.get('/api/notifications/unread-count', authenticateToken, NotificationController.getUnreadCount);
+app.get('/api/notifications',              authenticateToken, NotificationController.getNotifications);
+app.patch('/api/notifications/:id/read',   authenticateToken, NotificationController.markRead);
 
 // User Management Routes (Settings)
 app.get   ('/api/users',                authenticateToken, requireBGH, UserController.getUsers);

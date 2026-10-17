@@ -8,11 +8,13 @@ export class NotificationController {
   /**
    * GET /api/notifications
    * Lấy danh sách notifications của user đang đăng nhập.
+   * Tìm theo username VÀ role (vì ClosureService gửi tới recipients=['BGH'] thay vì username cụ thể).
    */
   static async getNotifications(req, res) {
     try {
       const username = req.user?.username;
-      const data = await NotificationService.getForUser(username);
+      const role     = req.user?.role;
+      const data = await NotificationService.getForUser(username, role);
       return res.json({ success: true, data });
     } catch (err) {
       console.error('[NotificationController] getNotifications error:', err);
@@ -38,11 +40,13 @@ export class NotificationController {
   /**
    * GET /api/notifications/unread-count
    * Lấy số notifications chưa đọc của user đang đăng nhập.
+   * Tìm theo username VÀ role (vì ClosureService gửi tới recipients=['BGH'] thay vì username cụ thể).
    */
   static async getUnreadCount(req, res) {
     try {
       const username = req.user?.username;
-      const count = await NotificationService.getUnreadCount(username);
+      const role     = req.user?.role;
+      const count = await NotificationService.getUnreadCount(username, role);
       return res.json({ success: true, count });
     } catch (err) {
       console.error('[NotificationController] getUnreadCount error:', err);

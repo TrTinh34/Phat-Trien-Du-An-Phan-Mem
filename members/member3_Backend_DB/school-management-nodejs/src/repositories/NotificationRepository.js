@@ -22,14 +22,16 @@ export class NotificationRepository {
 
   /**
    * Lấy danh sách notifications của một user, sắp xếp mới nhất trước.
+   * Khớp username HOẶC role (để BGH nhận thông báo gửi tới recipients=['BGH']).
    */
-  static async findByRecipient(username) {
+  static async findByRecipient(username, role) {
+    const params = role ? [username, role] : [username, username];
     const res = await query(
       `SELECT * FROM notifications
-       WHERE $1 = ANY(recipients)
+       WHERE $1 = ANY(recipients) OR $2 = ANY(recipients)
        ORDER BY sent_at DESC
        LIMIT 50`,
-      [username]
+      params
     );
     if (res && res.rows) return res.rows;
     return [];
@@ -48,12 +50,14 @@ export class NotificationRepository {
 
   /**
    * Đếm số notifications chưa đọc của một user.
+   * Khớp username HOẶC role (để BGH nhận thông báo gửi tới recipients=['BGH']).
    */
-  static async findUnreadCount(username) {
+  static async findUnreadCount(username, role) {
+    const params = role ? [username, role] : [username, username];
     const res = await query(
       `SELECT COUNT(*) FROM notifications
-       WHERE $1 = ANY(recipients) AND read_at IS NULL`,
-      [username]
+       WHERE ($1 = ANY(recipients) OR $2 = ANY(recipients)) AND read_at IS NULL`,
+      params
     );
     if (res && res.rows) return res.rows[0].count;
     return '0';

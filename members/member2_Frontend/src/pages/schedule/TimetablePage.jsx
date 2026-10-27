@@ -13,7 +13,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { ROLES } from '../../constants/roles.js';
-import { fetchSchedulePageData } from '../../api/stubs.js';
+import { fetchScheduleTemplates, fetchClasses } from '../../api/stubs.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -149,21 +149,11 @@ export default function TimetablePage() {
     setIsLoading(true);
     setError(null);
 
-    fetchSchedulePageData(classId, selectedWeek)
-      .then((data) => {
+    fetchScheduleTemplates(classId)
+      .then((templates) => {
         if (cancelled) return;
-        // Cập nhật dropdown lớp cho BGH/GV
-        if (!isGVCN && Array.isArray(data.classes) && data.classes.length > 0) {
-          setClasses(data.classes);
-          if (!selectedClass) {
-            const first = data.classes[0];
-            setSelectedClass(first.class_name || first.className || first.id || '');
-          }
-        }
-        // Build slotMap
-        const slots = Array.isArray(data.slots) ? data.slots : [];
         const map = {};
-        slots.forEach((s) => {
+        (Array.isArray(templates) ? templates : []).forEach((s) => {
           map[`${s.dayOfWeek}_${s.period}`] = {
             subjectName: s.subject_name || s.subjectName || '',
             teacherName: s.teacher_name || s.teacherName || '',
@@ -186,23 +176,17 @@ export default function TimetablePage() {
   // Load classes cho non-GVCN lần đầu (lấy class list từ API)
   useEffect(() => {
     if (isGVCN) return;
-    // Class list sẽ được populate từ fetchSchedulePageData khi có week
-    // Nếu chưa có selectedClass sau 1 giây, gọi với class rỗng để lấy danh sách
-    const timer = setTimeout(() => {
-      if (!selectedClass) {
-        // Dùng tuần hiện tại để lấy danh sách lớp
-        fetchSchedulePageData('', selectedWeek)
-          .then((data) => {
-            if (Array.isArray(data.classes) && data.classes.length > 0) {
-              setClasses(data.classes);
-              const first = data.classes[0];
-              setSelectedClass(first.class_name || first.className || first.id || '');
-            }
-          })
-          .catch(() => {});
-      }
-    }, 0);
-    return () => clearTimeout(timer);
+    fetchClasses()
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setClasses(data);
+          if (!selectedClass) {
+            const first = data[0];
+            setSelectedClass(first.class_name || first.className || first.id || '');
+          }
+        }
+      })
+      .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const displayClass = isGVCN ? (user?.className ?? selectedClass) : selectedClass;

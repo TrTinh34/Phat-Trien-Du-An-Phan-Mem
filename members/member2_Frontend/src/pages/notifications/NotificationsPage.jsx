@@ -4,7 +4,7 @@
  * Hiển thị danh sách thông báo, đánh dấu đã đọc khi nhấn.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { fetchNotifications, markNotificationRead } from '../../api/stubs.js';
 import { ROLES } from '../../constants/roles.js';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -65,6 +65,10 @@ export default function NotificationsPage() {
   const [loading, setLoading]             = useState(true);
   const [error, setError]                 = useState(null);
 
+  const [searchText,  setSearchText]  = useState('');
+  const [filterType,  setFilterType]  = useState('all');
+  const [filterRead,  setFilterRead]  = useState('all');
+
   useEffect(() => {
     let cancelled = false;
 
@@ -105,6 +109,17 @@ export default function NotificationsPage() {
 
   const unreadCount = notifications.filter((n) => !(n.readAt ?? n.read_at)).length;
 
+  const filteredNotifications = useMemo(() => {
+    return notifications.filter((n) => {
+      const q = searchText.trim().toLowerCase();
+      if (q && !n.title?.toLowerCase().includes(q) && !n.content?.toLowerCase().includes(q)) return false;
+      if (filterType !== 'all' && n.type !== filterType) return false;
+      if (filterRead === 'unread' && (n.readAt ?? n.read_at)) return false;
+      if (filterRead === 'read'   && !(n.readAt ?? n.read_at)) return false;
+      return true;
+    });
+  }, [notifications, searchText, filterType, filterRead]);
+
   return (
     <div className="space-y-6">
 
@@ -128,6 +143,49 @@ export default function NotificationsPage() {
         )}
       </div>
 
+      {/* ── Search & Filter bar ── */}
+      <div className="flex flex-wrap gap-3 pb-2">
+        {/* Ô tìm kiếm */}
+        <div className="relative flex-1 min-w-[200px]">
+          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-[#94a3b8]" aria-hidden="true">search</span>
+          <input
+            type="text"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="Tìm kiếm theo tiêu đề, nội dung..."
+            className="w-full border border-[#e2e8f0] rounded-lg pl-9 pr-3 py-2 text-body-md text-[#0b1c30] bg-white focus:outline-none focus:border-[#004ac6] focus:ring-2 focus:ring-[#004ac6]/15 transition-all"
+          />
+        </div>
+        {/* Lọc loại */}
+        <select
+          value={filterType}
+          onChange={(e) => setFilterType(e.target.value)}
+          className="border border-[#e2e8f0] rounded-lg px-3 py-2 text-body-md text-[#0b1c30] bg-white focus:outline-none focus:border-[#004ac6] focus:ring-2 focus:ring-[#004ac6]/15 transition-all"
+        >
+          <option value="all">Tất cả loại</option>
+          <option value="closure_submitted">Nộp sổ điểm</option>
+          <option value="unlock_request">Xin mở khóa</option>
+          <option value="unlock_approved">Mở khóa được duyệt</option>
+          <option value="system">Hệ thống</option>
+        </select>
+        {/* Lọc trạng thái đọc */}
+        <select
+          value={filterRead}
+          onChange={(e) => setFilterRead(e.target.value)}
+          className="border border-[#e2e8f0] rounded-lg px-3 py-2 text-body-md text-[#0b1c30] bg-white focus:outline-none focus:border-[#004ac6] focus:ring-2 focus:ring-[#004ac6]/15 transition-all"
+        >
+          <option value="all">Tất cả trạng thái</option>
+          <option value="unread">Chưa đọc</option>
+          <option value="read">Đã đọc</option>
+        </select>
+        {/* Số kết quả */}
+        {(searchText || filterType !== 'all' || filterRead !== 'all') && (
+          <span className="inline-flex items-center text-body-sm text-[#64748b] self-center">
+            {filteredNotifications.length} kết quả
+          </span>
+        )}
+      </div>
+
       {/* ── Error banner ── */}
       {error && (
         <div className="flex items-center gap-3 p-4 rounded-lg bg-[#fef2f2] border border-[#fecaca] text-[#b91c1c]" role="alert">
@@ -145,14 +203,21 @@ export default function NotificationsPage() {
             <SkeletonCard />
           </>
         ) : notifications.length === 0 ? (
-          /* Empty state */
+          /* Empty state - chưa có dữ liệu */
           <div className="flex flex-col items-center justify-center py-20 text-[#94a3b8]">
             <span className="material-symbols-outlined text-[56px] mb-4">notifications_none</span>
             <p className="text-body-md font-medium">Chưa có thông báo nào</p>
             <p className="text-body-sm mt-1">Thông báo từ hệ thống và Ban Giám Hiệu sẽ xuất hiện ở đây.</p>
           </div>
+        ) : filteredNotifications.length === 0 ? (
+          /* Empty state - không có kết quả filter */
+          <div className="flex flex-col items-center justify-center py-20 text-[#94a3b8]">
+            <span className="material-symbols-outlined text-[56px] mb-4">search_off</span>
+            <p className="text-body-md font-medium">Không tìm thấy thông báo phù hợp</p>
+            <p className="text-body-sm mt-1">Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm.</p>
+          </div>
         ) : (
-          notifications.map((notification) => {
+          filteredNotifications.map((notification) => {
             const readAt    = notification.readAt ?? notification.read_at;
             const sentAt    = notification.sentAt ?? notification.sent_at;
             const typeCfg   = getTypeConfig(notification.type);

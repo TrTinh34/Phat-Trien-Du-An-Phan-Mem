@@ -1,13 +1,36 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '../api/client.js';
 
 const AuthContext = createContext(null);
 
-const STORAGE_KEY = 'htqllh_auth'; // key duy nhất lưu { user, token }
+const STORAGE_KEY = 'htqllh_auth'; // lưu { user, token }
+
+// Quyền mặc định — dùng làm fallback khi chưa/không lấy được từ server
+export const DEFAULT_PERMISSIONS = {
+  gradebook:  { GV: true,  GVCN: true,  BGH: true,  PH: false, HS: false },
+  attendance: { GV: true,  GVCN: true,  BGH: true,  PH: false, HS: false },
+  schedule:   { GV: true,  GVCN: true,  BGH: true,  PH: true,  HS: true  },
+  reports:    { GV: false, GVCN: false, BGH: true,  PH: false, HS: false },
+  settings:   { GV: false, GVCN: false, BGH: true,  PH: false, HS: false },
+};
+
+// Interval fetch permissions từ server (ms) — đủ nhanh để phản ánh thay đổi của BGH
+const PERMISSIONS_POLL_INTERVAL = 15_000; // 15 giây
+
+/**
+ * Kiểm tra role có quyền truy cập module không.
+ * Dùng DEFAULT_PERMISSIONS làm fallback cho module chưa có trong matrix.
+ */
+export function hasPermission(permissions, moduleId, role) {
+  if (!moduleId) return true;
+  const matrix = permissions ?? DEFAULT_PERMISSIONS;
+  const modPerms = matrix[moduleId] ?? DEFAULT_PERMISSIONS[moduleId];
+  if (!modPerms) return true;
+  return modPerms[role] === true;
+}
 
 /**
  * Đọc trạng thái đăng nhập đã lưu từ localStorage.
- * Trả { user, token } hoặc { user: null, token: null }
  */
 function readStoredAuth() {
   try {
@@ -16,24 +39,55 @@ function readStoredAuth() {
       const parsed = JSON.parse(stored);
       if (parsed?.user && parsed?.token) return parsed;
     }
-    // Backward compat với key cũ (chỉ user, không có token)
     const legacyUser = localStorage.getItem('htqllh_user') || localStorage.getItem('edumanage_user');
     if (legacyUser) {
-      // Xóa key cũ (không có token → không thể dùng)
       localStorage.removeItem('htqllh_user');
       localStorage.removeItem('edumanage_user');
     }
-  } catch {
-    // ignore
-  }
+  } catch { /* ignore */ }
   return { user: null, token: null };
 }
 
 export function AuthProvider({ children }) {
-  const [authState, setAuthState] = useState(readStoredAuth);
+  const [authState, setAuthState]         = useState(readStoredAuth);
   const [isRestoringSession, setIsRestoringSession] = useState(false);
+  // Permissions luôn lấy từ server — không cache localStorage
+  const [permissions, setPermissions]     = useState(DEFAULT_PERMISSIONS);
+  const pollTimerRef                       = useRef(null);
 
-  // Khôi phục phiên: gọi /api/auth/me để xác minh token còn hiệu lực
+  // ── Fetch permissions từ server ─────────────────────────────────────────────
+  const fetchPermissionsFromServer = useCallback(async (token) => {
+    if (!token) return;
+    try {
+      const data = await apiClient('/settings/permissions', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (data?.success && data?.data && typeof data.data === 'object') {
+        // Merge với DEFAULT để luôn có đủ keys
+        setPermissions({ ...DEFAULT_PERMISSIONS, ...data.data });
+      }
+    } catch {
+      // Giữ nguyên permissions hiện tại nếu fetch thất bại
+    }
+  }, []);
+
+  // ── Bắt đầu / dừng polling permissions ─────────────────────────────────────
+  const startPolling = useCallback((token) => {
+    // Clear timer cũ nếu có
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    pollTimerRef.current = setInterval(() => {
+      fetchPermissionsFromServer(token);
+    }, PERMISSIONS_POLL_INTERVAL);
+  }, [fetchPermissionsFromServer]);
+
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
+
+  // ── Restore session khi mount ───────────────────────────────────────────────
   useEffect(() => {
     const { token } = authState;
     if (!token) return;
@@ -44,35 +98,33 @@ export function AuthProvider({ children }) {
     })
       .then((data) => {
         if (data?.user) {
-          // Cập nhật thông tin user mới nhất từ DB
-          setAuthState((prev) => ({
-            ...prev,
-            user: data.user,
-          }));
+          setAuthState((prev) => ({ ...prev, user: data.user }));
+          // Fetch permissions ngay lập tức (không dùng cache)
+          fetchPermissionsFromServer(token);
+          // Bắt đầu polling để nhận thay đổi từ BGH
+          startPolling(token);
         }
       })
       .catch(() => {
-        // Token hết hạn hoặc không hợp lệ → đăng xuất
         clearAuth();
       })
       .finally(() => setIsRestoringSession(false));
-    // Chỉ chạy 1 lần khi mount
+
+    // Cleanup polling khi unmount
+    return () => stopPolling();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function clearAuth() {
     localStorage.removeItem(STORAGE_KEY);
-    // Xóa cả key cũ nếu còn
     localStorage.removeItem('htqllh_user');
     localStorage.removeItem('edumanage_user');
     setAuthState({ user: null, token: null });
+    setPermissions(DEFAULT_PERMISSIONS);
+    stopPolling();
   }
 
-  /**
-   * Đăng nhập: gọi API thật, lưu token + user vào localStorage.
-   * Sau khi login, gọi thêm /auth/me để lấy user đầy đủ (có className).
-   * Throws nếu API trả lỗi (401, 500, network error).
-   */
+  // ── Login ───────────────────────────────────────────────────────────────────
   const login = useCallback(async ({ username, password, role }) => {
     const data = await apiClient('/auth/login', {
       method: 'POST',
@@ -83,12 +135,11 @@ export function AuthProvider({ children }) {
       throw new Error(data?.message || 'Đăng nhập thất bại. Vui lòng thử lại.');
     }
 
-    // Lưu ngay user từ login response
     const newAuth = { user: data.user, token: data.token };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newAuth));
     setAuthState(newAuth);
 
-    // Gọi thêm /auth/me để lấy user đầy đủ (có className) — Option A
+    // Lấy user đầy đủ (có className)
     try {
       const meData = await apiClient('/auth/me', {
         headers: { Authorization: `Bearer ${data.token}` },
@@ -98,15 +149,24 @@ export function AuthProvider({ children }) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(fullAuth));
         setAuthState(fullAuth);
       }
-    } catch {
-      // Nếu /auth/me thất bại, vẫn giữ user từ login response (fallback)
-    }
+    } catch { /* fallback to login response */ }
+
+    // Fetch permissions ngay sau login
+    await fetchPermissionsFromServer(data.token);
+    // Bắt đầu polling
+    startPolling(data.token);
 
     return data;
-  }, []);
+  }, [fetchPermissionsFromServer, startPolling]);
 
   const logout = useCallback(() => {
     clearAuth();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── updatePermissions: BGH gọi ngay sau khi lưu để UI phản ánh tức thì ─────
+  const updatePermissions = useCallback((newMatrix) => {
+    setPermissions({ ...DEFAULT_PERMISSIONS, ...newMatrix });
   }, []);
 
   const value = {
@@ -116,6 +176,8 @@ export function AuthProvider({ children }) {
     className: authState.user?.className ?? null,
     isAuthenticated: !!authState.user && !!authState.token,
     isRestoringSession,
+    permissions,
+    updatePermissions,
     login,
     logout,
   };

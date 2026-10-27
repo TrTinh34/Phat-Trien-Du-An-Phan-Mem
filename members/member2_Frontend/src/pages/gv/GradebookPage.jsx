@@ -9,7 +9,7 @@
  * Requirements: sổ điểm GV / BGH
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import Modal from '../../components/shared/Modal.jsx';
 import {
@@ -221,8 +221,9 @@ export default function GradebookPage() {
   const [isUnlockModalOpen,  setIsUnlockModalOpen]  = useState(false);
   const [unlockReason,       setUnlockReason]       = useState('');
   const [submittingUnlock,   setSubmittingUnlock]   = useState(false);
+  const [unlockSentBanner,   setUnlockSentBanner]   = useState(false); // banner sau khi gửi đơn
 
-  // isReadOnly: BGH luôn read-only; GVCN read-only khi đã chốt sổ
+  // isReadOnly: BGH luôn read-only; GVCN read-only khi đã chốt sổ chờ duyệt hoặc đã khóa toàn trường
   const isReadOnly = role === ROLES.BGH
     || closureStatus?.status === 'submitted'
     || closureStatus?.status === 'locked';
@@ -310,7 +311,30 @@ export default function GradebookPage() {
     return () => { cancelled = true; };
   }, [selectedClass, selectedSemester]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Derived ───────────────────────────────────────────────────────────────
+  // ── Auto-poll closure status khi GVCN đã gửi đơn xin mở khóa (chờ BGH duyệt) ──
+  useEffect(() => {
+    // Chỉ poll khi GVCN đang ở trạng thái submitted/locked và đã gửi đơn
+    if (!isGVCN || !selectedClass || !unlockSentBanner) return;
+    const interval = setInterval(async () => {
+      try {
+        const closure = await fetchClosureStatus({
+          classId:    selectedClass,
+          semester:   selectedSemester,
+          schoolYear: '2024-2025',
+        });
+        setClosureStatus(closure);
+        // Nếu đã được BGH duyệt mở khóa (status = approved) → dừng poll
+        if (closure?.status === 'approved' || closure == null) {
+          setUnlockSentBanner(false);
+          setSaveMessage({ type: 'success', text: 'BGH đã duyệt mở khóa sổ điểm! Bạn có thể chỉnh sửa điểm trở lại.' });
+          clearInterval(interval);
+        }
+      } catch {
+        // Ignore poll errors
+      }
+    }, 5000); // poll mỗi 5 giây
+    return () => clearInterval(interval);
+  }, [isGVCN, selectedClass, selectedSemester, unlockSentBanner]); // eslint-disable-line react-hooks/exhaustive-deps
   const classStudents = students; // already filtered by class via API
 
   const displaySubjects = useMemo(() => {
@@ -472,7 +496,8 @@ export default function GradebookPage() {
         setSubmittingUnlock(false);
         setIsUnlockModalOpen(false);
         setUnlockReason('');
-        setSaveMessage({ type: 'success', text: 'Đã gửi đơn xin mở khóa sổ điểm tới Ban Giám Hiệu phê duyệt thành công!' });
+        setUnlockSentBanner(true);
+        setSaveMessage({ type: 'success', text: 'Đã gửi đơn xin mở khóa sổ điểm tới Ban Giám Hiệu phê duyệt thành công! Vui lòng chờ BGH xử lý.' });
       })
       .catch((err) => {
         setSubmittingUnlock(false);
@@ -583,7 +608,16 @@ export default function GradebookPage() {
           <p className="text-body-sm font-medium flex-1">Sổ điểm đã chốt – chỉ xem.</p>
         </div>
       )}
-
+      {/* Banner chờ BGH duyệt mở khóa */}
+      {isGVCN && unlockSentBanner && (
+        <div className="flex items-center gap-3 p-4 rounded-lg bg-[#eff4ff] border border-[#bfdbfe] text-[#1d4ed8]" role="status">
+          <span className="material-symbols-outlined text-[20px] animate-spin">progress_activity</span>
+          <p className="text-body-sm font-medium flex-1">
+            Đã gửi đơn xin mở khóa – đang chờ BGH phê duyệt.
+            <span className="font-normal"> Trang sẽ tự động cập nhật khi được duyệt.</span>
+          </p>
+        </div>
+      )}
       {/* ── Filter toolbar ── */}
       <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-elevation-1 p-4">
         <div className="flex flex-wrap gap-4 items-end">
@@ -687,20 +721,21 @@ export default function GradebookPage() {
                     className="sticky left-12 z-20 bg-[#f8fafc] border-r border-[#e2e8f0] min-w-[160px] px-4 py-3 text-left text-label-sm font-semibold text-[#475569] uppercase tracking-wide align-middle">
                     Học sinh
                   </th>
-                  {displaySubjects.map((sub) =>
-                    COL_GROUPS.map((group) => (
-                      <th key={`${sub.id}_${group.key}_head`} colSpan={MAX_COLS[group.key]} scope="colgroup"
-                        className={`px-2 py-2 text-center text-label-sm font-semibold uppercase tracking-wide border-l border-[#e2e8f0] ${group.color} ${group.textColor}`}>
-                        {group.label}
-                        <span className="block text-[10px] font-normal opacity-70 normal-case tracking-normal">{group.subLabel}</span>
-                      </th>
-                    ))
-                  )}
                   {displaySubjects.map((sub) => (
-                    <th key={`${sub.id}_avg_head`} scope="col"
-                      className="px-3 py-2 text-center text-label-sm font-semibold text-[#475569] uppercase tracking-wide bg-[#f1f5f9] border-l border-[#e2e8f0] min-w-[4.5rem]">
-                      TB
-                    </th>
+                    <React.Fragment key={sub.id}>
+                      {COL_GROUPS.map((group) => (
+                        <th key={`${sub.id}_${group.key}_head`} colSpan={MAX_COLS[group.key]} scope="colgroup"
+                          className={`px-2 py-2 text-center text-label-sm font-semibold uppercase tracking-wide border-l border-[#e2e8f0] ${group.color} ${group.textColor}`}>
+                          {group.label}
+                          <span className="block text-[10px] font-normal opacity-70 normal-case tracking-normal">{group.subLabel}</span>
+                        </th>
+                      ))}
+                      <th key={`${sub.id}_avg_head`} scope="col"
+                        className="px-3 py-2 text-center text-label-sm font-semibold text-[#475569] uppercase tracking-wide bg-[#f1f5f9] border-l border-[#e2e8f0]"
+                        style={{ minWidth: '5.5rem' }}>
+                        Tổng
+                      </th>
+                    </React.Fragment>
                   ))}
                 </tr>
                 {/* Row 2: Sub-column headers */}
@@ -717,7 +752,8 @@ export default function GradebookPage() {
                         ))
                       )}
                       <th key={`${sub.id}_avg_sub`} scope="col"
-                        className="px-3 py-1.5 text-center text-[11px] font-semibold text-[#475569] bg-[#f1f5f9] border-l border-[#e2e8f0]">
+                        className="px-3 py-1.5 text-center text-[11px] font-semibold text-[#475569] bg-[#f1f5f9] border-l border-[#e2e8f0]"
+                        style={{ minWidth: '5.5rem' }}>
                         <span className="block text-[10px] text-[#94a3b8] font-medium uppercase">{sub.name}</span>
                         {selectedSemester}
                       </th>
@@ -788,7 +824,7 @@ export default function GradebookPage() {
                             {/* Average column */}
                             <td key={`${sub.id}_avg_cell`}
                               className="px-2 py-1.5 text-center bg-[#f8fafc] border-l border-[#e2e8f0]"
-                              style={{ minWidth: '4.5rem' }}>
+                              style={{ minWidth: '5.5rem' }}>
                               <div className={`w-full flex items-center justify-center px-2 py-1.5 rounded text-body-sm font-semibold ${gradeColorClass(entry?.average ?? null)}`}
                                 style={{ fontVariantNumeric: 'tabular-nums' }}>
                                 {fmtScore(entry?.average ?? null)}

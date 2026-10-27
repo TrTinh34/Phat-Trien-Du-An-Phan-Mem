@@ -1,4 +1,4 @@
-﻿import { querySafe as query, withTransaction } from '../config/db.js';
+﻿import { query, querySafe, withTransaction } from '../config/db.js';
 
 export class ClassRepository {
   static async findAll() {
@@ -65,6 +65,7 @@ export class ClassRepository {
 
   /** Xóa phân công chủ nhiệm của một user khỏi TẤT CẢ lớp (dùng khi đổi role ra khỏi GVCN). */
   static async removeHomeroom(userId) {
+    // Dùng query thuần (ném lỗi) thay vì querySafe — cascade cleanup phải thành công hoặc rollback
     await query(
       'UPDATE school_classes SET homeroom_teacher_id = NULL, gvcn_name = NULL WHERE homeroom_teacher_id = $1',
       [userId]
@@ -88,6 +89,7 @@ export class ClassRepository {
    * Trả về true nếu có hàng bị cập nhật, false nếu lớp không tồn tại hoặc chưa có phân công.
    */
   static async removeHomeroomByClass(className) {
+    // Dùng query thuần (ném lỗi) — bước cleanup không được fail-silent
     const res = await query(
       'UPDATE school_classes SET homeroom_teacher_id = NULL, gvcn_name = NULL WHERE class_name = $1 RETURNING id',
       [className]

@@ -157,13 +157,13 @@ export default function AttendancePage() {
     Promise.all([
       fetchAttendance(selectedClass, selectedDate).catch(() => null),
       fetchScheduleTemplates(selectedClass).catch(() => []),
-    ]).then(async ([attendanceRecords, templateSlots]) => {
+      fetchStudents(selectedClass).catch(() => []),
+    ]).then(([attendanceRecords, templateSlots, studentList]) => {
       if (cancelled) return;
 
       // Kiểm tra ngày hôm đó có tiết học không — dùng template (không phụ thuộc tuần)
-      const hasSlotToday = templateSlots.length === 0
-        ? true  // Nếu chưa có template nào → không chặn (cho phép điểm danh)
-        : templateSlots.some((s) => Number(s.dayOfWeek) === dayOfWeekSchema);
+      const hasSlotToday = templateSlots.length > 0
+        && templateSlots.some((s) => Number(s.dayOfWeek) === dayOfWeekSchema);
 
       if (!hasSlotToday) {
         // Không có tiết học hôm nay
@@ -174,46 +174,28 @@ export default function AttendancePage() {
         return;
       }
 
-      // Có tiết học — xử lý attendance data
-      if (Array.isArray(attendanceRecords) && attendanceRecords.length > 0) {
-        // Đã có dữ liệu điểm danh
-        const students = [];
-        const map = {};
+      // Build existing attendance map từ records
+      const existingMap = {};
+      if (Array.isArray(attendanceRecords)) {
         for (const r of attendanceRecords) {
-          const id   = r.student_code || r.studentCode || String(r.student_id ?? r.id ?? '');
-          const name = r.student_name || r.full_name   || r.fullName || r.name || '';
-          const status = (r.status || 'present').toLowerCase();
-          if (!id) continue;
-          students.push({ id, name });
-          map[id] = status;
-        }
-        setClassStudents(students);
-        setAttendanceMap(map);
-      } else {
-        // Chưa có dữ liệu điểm danh — lấy danh sách học sinh, set mặc định present
-        try {
-          const studentList = await fetchStudents(selectedClass);
-          if (cancelled) return;
-          if (Array.isArray(studentList) && studentList.length > 0) {
-            const students = studentList.map((r) => ({
-              id:   r.student_code || r.studentCode || String(r.id ?? ''),
-              name: r.full_name    || r.fullName    || r.name || '',
-            })).filter((s) => s.id);
-            const map = {};
-            students.forEach((s) => { map[s.id] = 'present'; });
-            setClassStudents(students);
-            setAttendanceMap(map);
-          } else {
-            setClassStudents([]);
-            setAttendanceMap({});
-          }
-        } catch {
-          if (!cancelled) {
-            setClassStudents([]);
-            setAttendanceMap({});
-          }
+          const id = r.student_code || r.studentCode || String(r.student_id ?? r.id ?? '');
+          if (id) existingMap[id] = (r.status || 'present').toLowerCase();
         }
       }
+
+      // Build full student list từ DB, merge với records
+      const students = Array.isArray(studentList)
+        ? studentList.map((r) => ({
+            id:   r.student_code || r.studentCode || String(r.id ?? ''),
+            name: r.full_name    || r.fullName    || r.name || '',
+          })).filter((s) => s.id)
+        : [];
+
+      const map = {};
+      students.forEach((s) => { map[s.id] = existingMap[s.id] ?? 'present'; });
+
+      setClassStudents(students);
+      setAttendanceMap(map);
       if (!cancelled) setIsLoadingData(false);
     }).catch(() => {
       if (!cancelled) {

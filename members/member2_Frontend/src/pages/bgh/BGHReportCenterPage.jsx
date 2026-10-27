@@ -284,9 +284,10 @@ export default function BGHReportCenterPage() {
   const [error,            setError]            = useState(null);
 
   // Modal & action state
-  const [isLockModalOpen, setIsLockModalOpen] = useState(false);
-  const [lockingAll,      setLockingAll]      = useState(false);
-  const [approvingId,     setApprovingId]     = useState(null);
+  const [isLockModalOpen,    setIsLockModalOpen]    = useState(false);
+  const [lockingAll,         setLockingAll]         = useState(false);
+  const [approvingId,        setApprovingId]        = useState(null);
+  const [unlockSuccessClass, setUnlockSuccessClass] = useState(null); // tên lớp vừa duyệt mở khóa
 
   // Unlock requests from notifications
   const [unlockRequests,  setUnlockRequests]  = useState([]);
@@ -313,8 +314,10 @@ export default function BGHReportCenterPage() {
         try {
           const notifications = await fetchNotifications();
           if (!cancelled) {
+            // Lọc tất cả unlock_request chưa được duyệt (kể cả đã đọc)
+            // vì BGH vẫn cần duyệt dù đã click đọc thông báo
             const requests = (Array.isArray(notifications) ? notifications : []).filter(
-              (n) => n.type === 'unlock_request' && !(n.readAt ?? n.read_at)
+              (n) => n.type === 'unlock_request'
             );
             setUnlockRequests(requests);
           }
@@ -383,6 +386,13 @@ export default function BGHReportCenterPage() {
       });
       // Xóa request khỏi danh sách sau khi duyệt
       setUnlockRequests((prev) => prev.filter((r) => r.id !== request.id));
+      // Cập nhật status lớp về 'approved' trong danh sách hiển thị
+      const classId = request.relatedClass ?? request.related_class;
+      setGradeBookList((prev) =>
+        prev.map((r) => r.classId === classId ? { ...r, status: 'approved' } : r)
+      );
+      // Hiện modal thành công
+      setUnlockSuccessClass(classId);
     } catch (err) {
       setError(err.message || 'Duyệt mở khóa thất bại.');
     } finally {
@@ -700,9 +710,26 @@ export default function BGHReportCenterPage() {
                           })()}
                         </div>
                       ) : row.status === 'approved' || row.status === 'locked' ? (
-                        <span className="inline-flex items-center gap-1 text-label-sm text-[#15803d] font-medium">
-                          <span className="material-symbols-outlined text-[16px]">check_circle</span>Đã xong
-                        </span>
+                        (() => {
+                          const unlockReq = unlockRequests.find(
+                            (r) => (r.relatedClass ?? r.related_class) === row.classId
+                          );
+                          return unlockReq ? (
+                            <button type="button"
+                              disabled={approvingUnlock === unlockReq.id}
+                              onClick={() => handleApproveUnlock(unlockReq)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#f59e0b] hover:bg-[#d97706] disabled:opacity-60 disabled:cursor-not-allowed text-white text-label-sm font-medium transition-all">
+                              {approvingUnlock === unlockReq.id
+                                ? <span className="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>
+                                : <span className="material-symbols-outlined text-[14px]">lock_open</span>}
+                              Duyệt mở khóa
+                            </button>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-label-sm text-[#15803d] font-medium">
+                              <span className="material-symbols-outlined text-[16px]">check_circle</span>Đã xong
+                            </span>
+                          );
+                        })()
                       ) : (
                         (() => {
                           const unlockReq = unlockRequests.find(
@@ -757,6 +784,35 @@ export default function BGHReportCenterPage() {
       {activeTab === 'chatso' && (
         <ChatSoTab loading={loading} submissionRate={submissionRate} scoreDistribution={scoreDistribution} />
       )}
+
+      {/* ── Modal thành công duyệt mở khóa ── */}
+      <Modal
+        isOpen={!!unlockSuccessClass}
+        onClose={() => setUnlockSuccessClass(null)}
+        title="Duyệt mở khóa thành công"
+        size="sm"
+      >
+        <div className="flex flex-col items-center text-center gap-4 py-2">
+          <div className="w-14 h-14 rounded-full bg-[#f0fdf4] flex items-center justify-center">
+            <span className="material-symbols-outlined text-[32px] text-[#16a34a]" aria-hidden="true">lock_open</span>
+          </div>
+          <div className="space-y-2">
+            <p className="text-body-md font-semibold text-[#0f172a]">
+              Đã mở khóa sổ điểm lớp {unlockSuccessClass}
+            </p>
+            <p className="text-body-sm text-[#64748b] leading-relaxed">
+              GVCN lớp <strong className="text-[#0b1c30]">{unlockSuccessClass}</strong> đã được
+              thông báo và có thể chỉnh sửa điểm trở lại.
+            </p>
+          </div>
+          <div className="w-full pt-2 border-t border-[#f1f5f9]">
+            <button type="button" onClick={() => setUnlockSuccessClass(null)}
+              className="w-full px-4 py-2.5 rounded-lg bg-[#16a34a] hover:bg-[#15803d] text-white text-body-sm font-semibold transition-colors">
+              Đã hiểu
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* ── Modal xác nhận khóa sổ ── */}
       <Modal

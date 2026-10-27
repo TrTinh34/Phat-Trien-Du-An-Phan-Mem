@@ -107,6 +107,8 @@ app.post('/api/tuition/pay', TuitionController.payTuition);
 // Class & Subject Routes
 app.get('/api/classes', ClassController.getClasses);
 app.post('/api/classes', ClassController.createClass);
+app.put('/api/classes/:className/homeroom',    authenticateToken, requireBGH, ClassController.assignHomeroom);
+app.delete('/api/classes/:className/homeroom', authenticateToken, requireBGH, ClassController.removeHomeroom);
 app.get('/api/subjects', SubjectController.getSubjects);
 app.post('/api/subjects', SubjectController.createSubject);
 

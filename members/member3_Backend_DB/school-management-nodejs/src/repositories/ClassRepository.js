@@ -31,5 +31,30 @@ export class ClassRepository {
     );
     return res.rows[0];
   }
+
+  /** Gán lớp chủ nhiệm cho một GVCN. */
+  static async assignHomeroom(className, userId, gvcnName) {
+    const res = await query(
+      'UPDATE school_classes SET homeroom_teacher_id = $2, gvcn_name = $3 WHERE class_name = $1 RETURNING *',
+      [className, userId, gvcnName]
+    );
+    return res.rows[0] ?? null;
+  }
+
+  /** Xóa phân công chủ nhiệm của một user khỏi TẤT CẢ lớp (trước khi gán lớp mới). */
+  static async removeHomeroom(userId) {
+    await query(
+      'UPDATE school_classes SET homeroom_teacher_id = NULL, gvcn_name = NULL WHERE homeroom_teacher_id = $1',
+      [userId]
+    );
+  }
+
+  /** Xóa phân công chủ nhiệm của một lớp cụ thể. */
+  static async removeHomeroomByClass(className) {
+    await query(
+      'UPDATE school_classes SET homeroom_teacher_id = NULL, gvcn_name = NULL WHERE class_name = $1',
+      [className]
+    );
+  }
 }
 

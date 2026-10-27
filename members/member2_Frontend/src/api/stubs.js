@@ -97,6 +97,32 @@ export const fetchClasses = async () => {
   return null;
 };
 
+/**
+ * Phân công lớp chủ nhiệm cho GVCN.
+ * @param {string} className - tên lớp (vd: "10A1")
+ * @param {number} userId - id của GVCN
+ */
+export const assignHomeroomClass = async (className, userId) => {
+  const data = await apiClient(`/classes/${encodeURIComponent(className)}/homeroom`, {
+    method: 'PUT',
+    body: { userId },
+  });
+  if (!data?.success) throw new Error(data?.message || 'Phân công lớp chủ nhiệm thất bại');
+  return data;
+};
+
+/**
+ * Hủy phân công lớp chủ nhiệm.
+ * @param {string} className - tên lớp cần hủy phân công
+ */
+export const removeHomeroomClass = async (className) => {
+  const data = await apiClient(`/classes/${encodeURIComponent(className)}/homeroom`, {
+    method: 'DELETE',
+  });
+  if (!data?.success) throw new Error(data?.message || 'Hủy phân công lớp chủ nhiệm thất bại');
+  return data;
+};
+
 export const fetchSubjects = async () => {
   try {
     const data = await apiClient('/subjects');

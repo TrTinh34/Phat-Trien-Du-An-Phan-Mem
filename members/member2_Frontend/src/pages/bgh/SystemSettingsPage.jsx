@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Modal from '../../components/shared/Modal.jsx';
 import DataTable from '../../components/shared/DataTable.jsx';
 import StatusBadge from '../../components/shared/StatusBadge.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 import {
   fetchUsers,
   createUser,
@@ -21,6 +22,9 @@ import {
   deleteUser,
   fetchPermissions,
   savePermissions,
+  fetchClasses,
+  assignHomeroomClass,
+  removeHomeroomClass,
 } from '../../api/stubs.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -42,12 +46,13 @@ const ROLE_BADGE_STYLES = {
 };
 
 const EMPTY_FORM = {
-  name:     '',
-  username: '',
-  password: '',
-  email:    '',
-  role:     'GV',
-  isActive: true,
+  name:      '',
+  username:  '',
+  password:  '',
+  email:     '',
+  role:      'GV',
+  isActive:  true,
+  className: '',
 };
 
 // ─── Permission matrix (static — quy tắc nghiệp vụ, không cần DB) ───────────
@@ -206,12 +211,21 @@ function UsersTab({ accounts, loading, onAdd, onEdit, onDeactivate, onDelete }) 
 
 // ─── Permissions tab ──────────────────────────────────────────────────────────
 
-function PermissionsTab() {
-  const [matrix, setMatrix] = useState(() =>
-    Object.fromEntries(
+function PermissionsTab({ currentPermissions, onPermissionsSaved }) {
+  const [matrix, setMatrix] = useState(() => {
+    // Khởi tạo từ permissions hiện tại của context (đã load từ server)
+    if (currentPermissions && typeof currentPermissions === 'object') {
+      return Object.fromEntries(
+        Object.entries(DEFAULT_PERMISSIONS).map(([mod, defaultRoles]) => [
+          mod,
+          { ...defaultRoles, ...(currentPermissions[mod] ?? {}) },
+        ])
+      );
+    }
+    return Object.fromEntries(
       Object.entries(DEFAULT_PERMISSIONS).map(([mod, roles]) => [mod, { ...roles }])
-    )
-  );
+    );
+  });
   const [saved, setSaved]       = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving]   = useState(false);
@@ -263,6 +277,8 @@ function PermissionsTab() {
       await savePermissions(matrix);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+      // Thông báo lên parent để cập nhật AuthContext
+      onPermissionsSaved?.(matrix);
     } catch (err) {
       setSaveError(err.message || 'Lưu phân quyền thất bại');
     } finally {
@@ -391,6 +407,12 @@ function PermissionsTab() {
 
 export default function SystemSettingsPage() {
   const [activeTab,   setActiveTab]   = useState('users');
+  const { permissions, updatePermissions } = useAuth();
+
+  // Callback: khi PermissionsTab lưu thành công → cập nhật permissions trong context ngay lập tức
+  const handlePermissionsSaved = useCallback((newMatrix) => {
+    updatePermissions(newMatrix);
+  }, [updatePermissions]);
 
   // User list state
   const [accounts,   setAccounts]    = useState([]);
@@ -403,6 +425,8 @@ export default function SystemSettingsPage() {
   const [modalForm,   setModalForm]   = useState(EMPTY_FORM);
   const [isSaving,    setIsSaving]    = useState(false);
   const [modalError,  setModalError]  = useState(null);
+  const [classes,        setClasses]        = useState([]);
+  const [classesLoading, setClassesLoading] = useState(false);
 
   // ── Fetch users on mount ──────────────────────────────────────────────────
   useEffect(() => {
@@ -426,25 +450,52 @@ export default function SystemSettingsPage() {
   }, []);
 
   // ── Modal open/close ──────────────────────────────────────────────────────
-  const openAddModal = useCallback(() => {
+  const openAddModal = useCallback(async () => {
     setEditingUser(null);
     setModalForm(EMPTY_FORM);
     setModalError(null);
+    setClassesLoading(true);
     setIsModalOpen(true);
+    try {
+      const data = await fetchClasses();
+      setClasses(data ?? []);
+    } catch {
+      setClasses([]);
+    } finally {
+      setClassesLoading(false);
+    }
   }, []);
 
-  const openEditModal = useCallback((user) => {
+  const openEditModal = useCallback(async (user) => {
     setEditingUser(user);
-    setModalForm({
-      name:     user.name,
-      username: user.username,
-      password: '',
-      email:    user.email,
-      role:     user.role,
-      isActive: user.isActive,
-    });
     setModalError(null);
+    setClassesLoading(true);
     setIsModalOpen(true);
+    let currentClassName = '';
+    try {
+      const data = await fetchClasses();
+      const classList = data ?? [];
+      setClasses(classList);
+      if (user.role === 'GVCN') {
+        const assignedClass = classList.find(
+          (c) => c.homeroom_teacher_id === user.id
+        );
+        currentClassName = assignedClass?.class_name ?? '';
+      }
+    } catch {
+      setClasses([]);
+    } finally {
+      setClassesLoading(false);
+    }
+    setModalForm({
+      name:      user.name,
+      username:  user.username,
+      password:  '',
+      email:     user.email,
+      role:      user.role,
+      isActive:  user.isActive,
+      className: currentClassName,
+    });
   }, []);
 
   const closeModal = useCallback(() => {
@@ -463,19 +514,25 @@ export default function SystemSettingsPage() {
     setIsSaving(true);
     setModalError(null);
 
+    // Ghi nhớ lớp cũ của user đang edit (trước khi gọi API)
+    const previousClass = editingUser
+      ? classes.find((c) => c.homeroom_teacher_id === editingUser.id)
+      : null;
+
     try {
+      let resultUser;
       if (editingUser) {
         // Update — không gửi password
-        const updated = await updateUser(editingUser.id, {
+        resultUser = await updateUser(editingUser.id, {
           fullName: modalForm.name,
           email:    modalForm.email,
           role:     modalForm.role,
           isActive: modalForm.isActive,
         });
-        setAccounts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+        setAccounts((prev) => prev.map((a) => (a.id === resultUser.id ? resultUser : a)));
       } else {
         // Create
-        const created = await createUser({
+        resultUser = await createUser({
           username: modalForm.username,
           password: modalForm.password,
           fullName: modalForm.name,
@@ -483,8 +540,20 @@ export default function SystemSettingsPage() {
           role:     modalForm.role,
           isActive: modalForm.isActive,
         });
-        setAccounts((prev) => [...prev, created]);
+        setAccounts((prev) => [...prev, resultUser]);
       }
+
+      // Xử lý phân công lớp chủ nhiệm nếu role là GVCN
+      if (modalForm.role === 'GVCN') {
+        if (modalForm.className) {
+          // Gán lớp chủ nhiệm (API tự remove phân công cũ của user trước)
+          await assignHomeroomClass(modalForm.className, resultUser.id);
+        } else if (editingUser && previousClass) {
+          // Người dùng chọn "Không phân công" và trước đó có lớp → hủy phân công
+          await removeHomeroomClass(previousClass.class_name);
+        }
+      }
+
       closeModal();
     } catch (err) {
       setModalError(err.message || 'Thao tác thất bại. Vui lòng thử lại.');
@@ -564,7 +633,12 @@ export default function SystemSettingsPage() {
           onDelete={handleDelete}
         />
       )}
-      {activeTab === 'permissions' && <PermissionsTab />}
+      {activeTab === 'permissions' && (
+        <PermissionsTab
+          currentPermissions={permissions}
+          onPermissionsSaved={handlePermissionsSaved}
+        />
+      )}
 
       {/* ── Add/Edit User Modal ── */}
       <Modal
@@ -646,6 +720,44 @@ export default function SystemSettingsPage() {
               ))}
             </select>
           </div>
+
+          {/* Lớp chủ nhiệm — chỉ hiện khi role là GVCN */}
+          {modalForm.role === 'GVCN' && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-label-sm font-medium text-[#434655]">
+                Lớp chủ nhiệm
+              </label>
+              {classesLoading ? (
+                <div className="border border-[#e2e8f0] rounded-lg px-3 py-2 text-body-md text-[#94a3b8] bg-[#f8fafc]">
+                  Đang tải danh sách lớp...
+                </div>
+              ) : (
+                <select
+                  value={modalForm.className}
+                  onChange={(e) => handleFormChange('className', e.target.value)}
+                  className="border border-[#e2e8f0] rounded-lg px-3 py-2 text-body-md text-[#0b1c30] bg-white focus:outline-none focus:border-[#004ac6] focus:ring-2 focus:ring-[#004ac6]/15 transition-all"
+                >
+                  <option value="">— Không phân công —</option>
+                  {classes.map((cls) => {
+                    const isOccupied =
+                      cls.homeroom_teacher_id !== null &&
+                      cls.homeroom_teacher_id !== undefined &&
+                      cls.homeroom_teacher_id !== (editingUser?.id ?? null);
+                    return (
+                      <option
+                        key={cls.class_name}
+                        value={cls.class_name}
+                        disabled={isOccupied}
+                      >
+                        {cls.class_name}
+                        {isOccupied ? ` (đã phân công: ${cls.gvcn_name ?? 'GVCN khác'})` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              )}
+            </div>
+          )}
 
           {/* isActive toggle */}
           <div className="flex items-center justify-between py-1">

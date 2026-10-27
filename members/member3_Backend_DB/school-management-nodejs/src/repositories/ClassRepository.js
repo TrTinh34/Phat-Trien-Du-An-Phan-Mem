@@ -1,4 +1,4 @@
-﻿import { querySafe as query } from '../config/db.js';
+﻿import { querySafe as query, withTransaction } from '../config/db.js';
 
 export class ClassRepository {
   static async findAll() {
@@ -32,16 +32,38 @@ export class ClassRepository {
     return res.rows[0];
   }
 
-  /** Gán lớp chủ nhiệm cho một GVCN. */
+  /**
+   * Gán lớp chủ nhiệm cho GVCN trong một transaction nguyên tử:
+   * 1. Kiểm tra lớp tồn tại.
+   * 2. Xóa phân công cũ của userId khỏi mọi lớp.
+   * 3. Gán userId vào lớp mới.
+   * Nếu bất kỳ bước nào thất bại, rollback toàn bộ — userId không mất lớp cũ.
+   */
   static async assignHomeroom(className, userId, gvcnName) {
-    const res = await query(
-      'UPDATE school_classes SET homeroom_teacher_id = $2, gvcn_name = $3 WHERE class_name = $1 RETURNING *',
-      [className, userId, gvcnName]
-    );
-    return res.rows[0] ?? null;
+    return withTransaction(async (client) => {
+      // Bước 1: kiểm tra lớp tồn tại trước khi xóa phân công cũ
+      const checkRes = await client.query(
+        'SELECT id FROM school_classes WHERE class_name = $1',
+        [className]
+      );
+      if (checkRes.rowCount === 0) return null;
+
+      // Bước 2: xóa phân công cũ của user này (an toàn vì đã xác nhận lớp mới tồn tại)
+      await client.query(
+        'UPDATE school_classes SET homeroom_teacher_id = NULL, gvcn_name = NULL WHERE homeroom_teacher_id = $1',
+        [userId]
+      );
+
+      // Bước 3: gán lớp mới
+      const res = await client.query(
+        'UPDATE school_classes SET homeroom_teacher_id = $2, gvcn_name = $3 WHERE class_name = $1 RETURNING *',
+        [className, userId, gvcnName]
+      );
+      return res.rows[0] ?? null;
+    });
   }
 
-  /** Xóa phân công chủ nhiệm của một user khỏi TẤT CẢ lớp (trước khi gán lớp mới). */
+  /** Xóa phân công chủ nhiệm của một user khỏi TẤT CẢ lớp (dùng khi đổi role ra khỏi GVCN). */
   static async removeHomeroom(userId) {
     await query(
       'UPDATE school_classes SET homeroom_teacher_id = NULL, gvcn_name = NULL WHERE homeroom_teacher_id = $1',
@@ -49,12 +71,16 @@ export class ClassRepository {
     );
   }
 
-  /** Xóa phân công chủ nhiệm của một lớp cụ thể. */
+  /**
+   * Xóa phân công chủ nhiệm của một lớp cụ thể.
+   * Trả về true nếu có hàng bị cập nhật, false nếu lớp không tồn tại hoặc chưa có phân công.
+   */
   static async removeHomeroomByClass(className) {
-    await query(
-      'UPDATE school_classes SET homeroom_teacher_id = NULL, gvcn_name = NULL WHERE class_name = $1',
+    const res = await query(
+      'UPDATE school_classes SET homeroom_teacher_id = NULL, gvcn_name = NULL WHERE class_name = $1 RETURNING id',
       [className]
     );
+    return (res?.rowCount ?? 0) > 0;
   }
 }
 

@@ -37,9 +37,7 @@ export class ClassController {
         return res.status(400).json({ success: false, message: 'Tài khoản không có vai trò GVCN' });
       }
 
-      // Xóa phân công cũ của user này trước khi gán lớp mới
-      await ClassRepository.removeHomeroom(userId);
-      // Gán lớp mới
+      // assignHomeroom now handles remove-old + assign-new atomically inside a transaction
       const updated = await ClassRepository.assignHomeroom(className, userId, user.full_name);
       if (!updated) {
         return res.status(404).json({ success: false, message: `Không tìm thấy lớp ${className}` });
@@ -60,7 +58,10 @@ export class ClassController {
   static async removeHomeroom(req, res) {
     try {
       const { className } = req.params;
-      await ClassRepository.removeHomeroomByClass(className);
+      const found = await ClassRepository.removeHomeroomByClass(className);
+      if (!found) {
+        return res.status(404).json({ success: false, message: `Không tìm thấy lớp ${className} hoặc lớp chưa có phân công` });
+      }
       return res.json({ success: true, className });
     } catch (err) {
       return res.status(500).json({ success: false, message: err.message });

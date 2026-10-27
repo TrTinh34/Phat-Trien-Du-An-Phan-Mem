@@ -478,7 +478,7 @@ export default function SystemSettingsPage() {
       setClasses(classList);
       if (user.role === 'GVCN') {
         const assignedClass = classList.find(
-          (c) => c.homeroom_teacher_id === user.id
+          (c) => Number(c.homeroom_teacher_id) === Number(user.id)
         );
         currentClassName = assignedClass?.class_name ?? '';
       }
@@ -516,7 +516,7 @@ export default function SystemSettingsPage() {
 
     // Ghi nhớ lớp cũ của user đang edit (trước khi gọi API)
     const previousClass = editingUser
-      ? classes.find((c) => c.homeroom_teacher_id === editingUser.id)
+      ? classes.find((c) => Number(c.homeroom_teacher_id) === Number(editingUser.id))
       : null;
 
     try {
@@ -543,16 +543,27 @@ export default function SystemSettingsPage() {
         setAccounts((prev) => [...prev, resultUser]);
       }
 
-      // Xử lý phân công lớp chủ nhiệm nếu role là GVCN
+      // Finding 2: xử lý khi đổi role từ GVCN sang role khác → dọn phân công cũ
+      if (editingUser?.role === 'GVCN' && modalForm.role !== 'GVCN' && previousClass) {
+        await removeHomeroomClass(previousClass.class_name);
+      }
+
+      // Xử lý phân công lớp chủ nhiệm nếu role hiện tại là GVCN
       if (modalForm.role === 'GVCN') {
         if (modalForm.className) {
-          // Gán lớp chủ nhiệm (API tự remove phân công cũ của user trước)
+          // Gán lớp chủ nhiệm (backend dùng transaction: remove cũ + assign mới nguyên tử)
           await assignHomeroomClass(modalForm.className, resultUser.id);
         } else if (editingUser && previousClass) {
           // Người dùng chọn "Không phân công" và trước đó có lớp → hủy phân công
           await removeHomeroomClass(previousClass.class_name);
         }
       }
+
+      // Finding 3: làm mới danh sách lớp để lần mở modal sau không hiển thị trạng thái cũ
+      try {
+        const refreshed = await fetchClasses();
+        setClasses(refreshed ?? []);
+      } catch { /* ignore — không ảnh hưởng đến kết quả submit */ }
 
       closeModal();
     } catch (err) {
@@ -742,7 +753,7 @@ export default function SystemSettingsPage() {
                     const isOccupied =
                       cls.homeroom_teacher_id !== null &&
                       cls.homeroom_teacher_id !== undefined &&
-                      cls.homeroom_teacher_id !== (editingUser?.id ?? null);
+                      Number(cls.homeroom_teacher_id) !== Number(editingUser?.id ?? null);
                     return (
                       <option
                         key={cls.class_name}

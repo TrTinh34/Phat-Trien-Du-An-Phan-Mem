@@ -529,7 +529,6 @@ export default function SystemSettingsPage() {
           role:     modalForm.role,
           isActive: modalForm.isActive,
         });
-        setAccounts((prev) => prev.map((a) => (a.id === resultUser.id ? resultUser : a)));
       } else {
         // Create
         resultUser = await createUser({
@@ -540,10 +539,9 @@ export default function SystemSettingsPage() {
           role:     modalForm.role,
           isActive: modalForm.isActive,
         });
-        setAccounts((prev) => [...prev, resultUser]);
       }
 
-      // Finding 2: xử lý khi đổi role từ GVCN sang role khác → dọn phân công cũ
+      // Finding 2 (role change): xử lý khi đổi role từ GVCN sang role khác → dọn phân công cũ
       if (editingUser?.role === 'GVCN' && modalForm.role !== 'GVCN' && previousClass) {
         await removeHomeroomClass(previousClass.class_name);
       }
@@ -559,14 +557,27 @@ export default function SystemSettingsPage() {
         }
       }
 
-      // Finding 3: làm mới danh sách lớp để lần mở modal sau không hiển thị trạng thái cũ
+      // Finding 1: Tải lại danh sách users từ server để đồng bộ trạng thái
+      // (tránh split-brain nếu bước homeroom phía trên thất bại)
       try {
-        const refreshed = await fetchClasses();
-        setClasses(refreshed ?? []);
-      } catch { /* ignore — không ảnh hưởng đến kết quả submit */ }
+        const freshUsers = await fetchUsers();
+        setAccounts(freshUsers);
+      } catch {
+        // Fallback: cập nhật optimistic nếu không refresh được
+        if (editingUser) {
+          setAccounts((prev) => prev.map((a) => (a.id === resultUser.id ? resultUser : a)));
+        } else {
+          setAccounts((prev) => [...prev, resultUser]);
+        }
+      }
 
       closeModal();
     } catch (err) {
+      // Finding 1: reload lại accounts từ server để không hiển thị trạng thái sai
+      try {
+        const freshUsers = await fetchUsers();
+        setAccounts(freshUsers);
+      } catch { /* bỏ qua nếu reload cũng thất bại */ }
       setModalError(err.message || 'Thao tác thất bại. Vui lòng thử lại.');
     } finally {
       setIsSaving(false);
@@ -576,6 +587,21 @@ export default function SystemSettingsPage() {
   // ── Deactivate ────────────────────────────────────────────────────────────
   const handleDeactivate = useCallback(async (user) => {
     try {
+      // Finding 2: nếu user là GVCN, dọn phân công lớp chủ nhiệm trước khi vô hiệu hóa
+      // để lớp không bị khóa vĩnh viễn với homeroom_teacher_id trỏ đến user bị disable
+      if (user.role === 'GVCN') {
+        try {
+          const classData = await fetchClasses();
+          const assignedClass = (classData ?? []).find(
+            (c) => Number(c.homeroom_teacher_id) === Number(user.id)
+          );
+          if (assignedClass) {
+            await removeHomeroomClass(assignedClass.class_name);
+          }
+        } catch {
+          // Bỏ qua lỗi xóa phân công — tiếp tục vô hiệu hóa
+        }
+      }
       const updated = await deactivateUser(user.id);
       setAccounts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
     } catch (err) {
@@ -766,6 +792,13 @@ export default function SystemSettingsPage() {
                     );
                   })}
                 </select>
+              )}
+              {/* Finding 3: cảnh báo khi GVCN chưa được phân công lớp */}
+              {!classesLoading && !modalForm.className && (
+                <p className="flex items-center gap-1 text-label-sm text-[#c2410c]">
+                  <span className="material-symbols-outlined text-[14px]">warning</span>
+                  GVCN chưa được phân công lớp chủ nhiệm. Tài khoản sẽ được tạo nhưng không có quyền truy cập dữ liệu lớp.
+                </p>
               )}
             </div>
           )}

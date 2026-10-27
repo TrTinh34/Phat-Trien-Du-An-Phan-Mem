@@ -587,21 +587,8 @@ export default function SystemSettingsPage() {
   // ── Deactivate ────────────────────────────────────────────────────────────
   const handleDeactivate = useCallback(async (user) => {
     try {
-      // Finding 2: nếu user là GVCN, dọn phân công lớp chủ nhiệm trước khi vô hiệu hóa
-      // để lớp không bị khóa vĩnh viễn với homeroom_teacher_id trỏ đến user bị disable
-      if (user.role === 'GVCN') {
-        try {
-          const classData = await fetchClasses();
-          const assignedClass = (classData ?? []).find(
-            (c) => Number(c.homeroom_teacher_id) === Number(user.id)
-          );
-          if (assignedClass) {
-            await removeHomeroomClass(assignedClass.class_name);
-          }
-        } catch {
-          // Bỏ qua lỗi xóa phân công — tiếp tục vô hiệu hóa
-        }
-      }
+      // Finding 5: backend (UserService.deactivateUser) now handles cascade removal
+      // of homeroom assignment for GVCN atomically — no need to call removeHomeroomClass separately.
       const updated = await deactivateUser(user.id);
       setAccounts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
     } catch (err) {

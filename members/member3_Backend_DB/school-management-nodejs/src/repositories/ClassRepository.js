@@ -72,6 +72,18 @@ export class ClassRepository {
   }
 
   /**
+   * Kiểm tra lớp có tồn tại không.
+   * Dùng cho removeHomeroom để phân biệt 404 (lớp không có) vs 200 idempotent (lớp có nhưng chưa phân công).
+   */
+  static async classExists(className) {
+    const res = await query(
+      'SELECT 1 FROM school_classes WHERE class_name = $1 LIMIT 1',
+      [className]
+    );
+    return (res?.rowCount ?? 0) > 0;
+  }
+
+  /**
    * Xóa phân công chủ nhiệm của một lớp cụ thể.
    * Trả về true nếu có hàng bị cập nhật, false nếu lớp không tồn tại hoặc chưa có phân công.
    */

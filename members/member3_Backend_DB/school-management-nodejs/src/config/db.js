@@ -215,6 +215,13 @@ export async function initDatabaseSchema() {
       END $$;
     `);
 
+    // ===== UNIQUE constraint cho homeroom_teacher_id (1 lớp – 1 GVCN) =====
+    await query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS school_classes_homeroom_unique
+        ON school_classes (homeroom_teacher_id)
+        WHERE homeroom_teacher_id IS NOT NULL;
+    `);
+
     // ===== Notifications: thêm cột mới cho hệ thống chốt sổ điểm =====
     await query(`
       ALTER TABLE notifications ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;

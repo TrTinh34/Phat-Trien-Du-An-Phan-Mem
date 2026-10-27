@@ -58,10 +58,15 @@ export class ClassController {
   static async removeHomeroom(req, res) {
     try {
       const { className } = req.params;
-      const found = await ClassRepository.removeHomeroomByClass(className);
-      if (!found) {
-        return res.status(404).json({ success: false, message: `Không tìm thấy lớp ${className} hoặc lớp chưa có phân công` });
+
+      // Finding 4: phân biệt "lớp không tồn tại" (404) vs "lớp tồn tại nhưng chưa phân công" (200 idempotent)
+      const classExists = await ClassRepository.classExists(className);
+      if (!classExists) {
+        return res.status(404).json({ success: false, message: `Không tìm thấy lớp ${className}` });
       }
+
+      // Idempotent: xóa nếu có, bỏ qua nếu chưa có — luôn trả 200
+      await ClassRepository.removeHomeroomByClass(className);
       return res.json({ success: true, className });
     } catch (err) {
       return res.status(500).json({ success: false, message: err.message });

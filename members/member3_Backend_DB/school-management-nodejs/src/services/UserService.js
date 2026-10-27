@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { UserRepository } from '../repositories/UserRepository.js';
+import { ClassRepository } from '../repositories/ClassRepository.js';
 
 const SALT_ROUNDS = 10;
 
@@ -53,6 +54,8 @@ export class UserService {
 
   /**
    * Cập nhật thông tin user. Chỉ hash password nếu truyền password mới.
+   * Finding 2: Nếu role thay đổi từ GVCN sang role khác, tự động xóa phân công lớp chủ nhiệm
+   * ở backend để tránh trạng thái không nhất quán khi frontend request homeroom thất bại.
    * @param {number} id
    * @param {{ fullName?, email?, role?, isActive?, password? }} data
    */
@@ -72,16 +75,31 @@ export class UserService {
     }
 
     const updated = await UserRepository.update(id, updatePayload);
+
+    // Finding 2: nếu role đổi từ GVCN sang role khác → dọn phân công lớp chủ nhiệm
+    // Thực hiện ở tầng Service để atomic với updateUser, không phụ thuộc vào frontend
+    if (existing.role === 'GVCN' && data.role && data.role !== 'GVCN') {
+      await ClassRepository.removeHomeroom(id);
+    }
+
     return this.toDto(updated);
   }
 
   /**
    * Vô hiệu hóa tài khoản (is_active = false).
+   * Finding 5: Nếu user là GVCN, tự động xóa phân công lớp chủ nhiệm ở backend
+   * để tránh lớp bị khóa với homeroom_teacher_id trỏ vào tài khoản disabled.
    * @param {number} id
    */
   static async deactivateUser(id) {
     const existing = await UserRepository.findById(id);
     if (!existing) throw new Error(`Không tìm thấy tài khoản id=${id}`);
+
+    // Finding 5: cascade xóa phân công homeroom trước khi deactivate
+    if (existing.role === 'GVCN') {
+      await ClassRepository.removeHomeroom(id);
+    }
+
     const updated = await UserRepository.deactivate(id);
     return this.toDto(updated);
   }

@@ -491,6 +491,15 @@ export const approveBGHUnlock = async ({ notificationId, classId, className, gvc
 // ── Communication API (Sổ liên lạc) ──────────────────────────────────────────
 
 /**
+ * Lấy danh sách liên hệ theo role (PH: BGH + GVCN các lớp của con; GVCN: lớp chủ nhiệm).
+ */
+export const fetchCommunicationContacts = async () => {
+  const data = await apiClient('/communication/contacts');
+  if (!data?.success) throw new Error(data?.message || 'Lỗi khi tải danh sách người liên hệ');
+  return data.data;
+};
+
+/**
  * Lấy dữ liệu khởi tạo trang: { classes, notifications }
  * @param {string|null} className - lọc thông báo theo lớp
  */
@@ -524,19 +533,21 @@ export const sendCommunicationNotification = async (payload) => {
 };
 
 /**
- * Lấy thread tin nhắn của một học sinh.
+ * Lấy thread tin nhắn của một học sinh theo kênh trao đổi (GVCN hoặc BGH).
  * @param {string} studentId
- * @returns {Array<{ id, from, text, sentAt }>}
+ * @param {string} [conversationType='GVCN']
+ * @returns {Array<{ id, from, text, conversationType, sentAt }>}
  */
-export const fetchMessageThread = async (studentId) => {
-  const data = await apiClient(`/communication/messages?studentId=${encodeURIComponent(studentId)}`);
+export const fetchMessageThread = async (studentId, conversationType = 'GVCN') => {
+  const qs = `?studentId=${encodeURIComponent(studentId)}&conversationType=${encodeURIComponent(conversationType || 'GVCN')}`;
+  const data = await apiClient(`/communication/messages${qs}`);
   if (!data?.success) throw new Error(data?.message || 'Lỗi khi tải tin nhắn');
   return data.data;
 };
 
 /**
  * Gửi tin nhắn vào thread.
- * @param {{ studentId, className, fromRole, message }} payload
+ * @param {{ studentId, className, fromRole, message, conversationType }} payload
  * @returns message DTO
  */
 export const sendMessageToThread = async (payload) => {

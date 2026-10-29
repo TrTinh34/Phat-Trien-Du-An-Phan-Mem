@@ -309,6 +309,39 @@ export async function initDatabaseSchema() {
     } catch (backfillErr) {
       console.warn('[DB INIT] homeroom_teacher_id backfill warning:', backfillErr.message);
     }
+
+    // ===== Parent-Student relations & Message channels =====
+    await query(`
+      CREATE TABLE IF NOT EXISTS parent_students (
+        id SERIAL PRIMARY KEY,
+        parent_user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        student_code VARCHAR(30) NOT NULL REFERENCES students(student_code) ON DELETE CASCADE,
+        relationship VARCHAR(50) DEFAULT 'Phụ huynh',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (parent_user_id, student_code)
+      );
+
+      ALTER TABLE parent_messages ADD COLUMN IF NOT EXISTS conversation_type VARCHAR(20) NOT NULL DEFAULT 'GVCN';
+      ALTER TABLE parent_messages ADD COLUMN IF NOT EXISTS sender_id INT REFERENCES users(id);
+      ALTER TABLE parent_messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+
+      -- Chuẩn hóa tin nhắn do BGH gửi về đúng kênh BGH
+      UPDATE parent_messages
+      SET conversation_type = 'BGH'
+      WHERE from_role = 'bgh' AND (conversation_type IS NULL OR conversation_type != 'BGH');
+    `);
+
+    try {
+      await pool.query(`
+        INSERT INTO parent_students (parent_user_id, student_code, relationship)
+        SELECT u.id, 'HS001', 'Phụ huynh'
+        FROM users u
+        WHERE u.username = 'ph.hs0001'
+        ON CONFLICT (parent_user_id, student_code) DO NOTHING;
+      `);
+    } catch (parentRelErr) {
+      console.warn('[DB INIT] parent_students backfill warning:', parentRelErr.message);
+    }
   } catch (err) {
     console.error('[DB INIT ERROR] Không thể khởi tạo schema PostgreSQL:', err.message);
     throw err;

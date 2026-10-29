@@ -2,19 +2,22 @@
  * ParentCommunicationPage — Sổ liên lạc phụ huynh
  *
  * Hai tab chính:
- *   - "Thông báo"  : tạo và xem danh sách thông báo gửi phụ huynh
- *   - "Trao đổi"   : thread chat giữa GVCN và từng phụ huynh học sinh
+ *   - "Thông báo"  : tạo và xem danh sách thông báo gửi phụ huynh (PH chỉ xem, không tạo)
+ *   - "Trao đổi"   : thread chat phân quyền chặt chẽ theo role:
+ *       + PH   : Chỉ thấy BGH và GVCN của các lớp mà con đang học
+ *       + GVCN : Chỉ thấy phụ huynh của lớp mình chủ nhiệm
+ *       + BGH  : Toàn quyền xem và trao đổi với phụ huynh toàn trường
  *
  * Dữ liệu: /api/communication/* — không dùng mockData.
- * Requirements: GVCN / BGH role
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import StatusBadge from '../../components/shared/StatusBadge.jsx';
 import {
   fetchCommunicationPageData,
   fetchCommunicationStudents,
+  fetchCommunicationContacts,
   sendCommunicationNotification,
   fetchMessageThread,
   sendMessageToThread,
@@ -47,8 +50,8 @@ const TYPE_ICONS = {
 
 function parentDisplayName(student) {
   if (student.parentName && student.parentName.trim()) return student.parentName;
-  const parts = student.name.trim().split(' ');
-  return `PH: ${parts[0]} (phụ huynh)`;
+  const parts = student.name ? student.name.trim().split(' ') : ['Học sinh'];
+  return `PH: ${parts[parts.length - 1]} (phụ huynh)`;
 }
 
 function initials(name = '') {
@@ -112,7 +115,7 @@ function SkeletonCard() {
   );
 }
 
-/** Form tạo thông báo mới */
+/** Form tạo thông báo mới — chỉ GVCN / BGH */
 function NotificationForm({ classes: classList, onSend, onCancel, isSending }) {
   const [formData, setFormData] = useState({ title: '', content: '', type: 'academic', recipients: [] });
   const [errors,   setErrors]   = useState({});
@@ -205,12 +208,192 @@ function NotificationForm({ classes: classList, onSend, onCancel, isSending }) {
   );
 }
 
-/** Danh sách phụ huynh bên trái */
+/** Danh sách người liên hệ cho Role PHỤ HUYNH */
+function ContactListForParent({ contacts, selectedId, onSelect, loading }) {
+  if (loading) {
+    return (
+      <div className="p-4 space-y-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="flex items-center gap-3">
+            <div className="animate-pulse w-10 h-10 rounded-full bg-[#e2e8f0]" />
+            <div className="flex-1 space-y-1.5">
+              <div className="animate-pulse h-4 bg-[#e2e8f0] rounded w-3/4" />
+              <div className="animate-pulse h-3 bg-[#e2e8f0] rounded w-1/2" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const bghList = contacts?.bgh || [];
+  const gvcnList = contacts?.gvcn || [];
+
+  if (bghList.length === 0 && gvcnList.length === 0) {
+    return (
+      <div className="px-4 py-8 text-center text-body-sm text-[#94a3b8]">
+        Không tìm thấy người liên hệ (Ban Giám Hiệu hoặc GVCN).
+      </div>
+    );
+  }
+
+  return (
+    <div className="divide-y divide-[#f1f5f9]">
+      {/* 1. Nhóm Ban Giám Hiệu */}
+      {bghList.length > 0 && (
+        <div>
+          <div className="px-4 py-2 bg-[#f8f9ff] text-label-sm font-semibold text-[#434655] uppercase tracking-wider flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-[15px] text-[#004ac6]">account_balance</span>
+            Ban Giám Hiệu
+          </div>
+          <ul role="list" className="divide-y divide-[#f1f5f9]">
+            {bghList.map((contact) => {
+              const isSelected = contact.id === selectedId;
+              return (
+                <li key={contact.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(contact)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors relative ${
+                      isSelected
+                        ? 'bg-[#eff4ff] border-l-2 border-[#004ac6]'
+                        : 'hover:bg-[#f8fafc] border-l-2 border-transparent'
+                    }`}
+                  >
+                    <div className="relative flex-none">
+                      <div
+                        className={`w-10 h-10 rounded-full flex items-center justify-center text-label-md font-bold select-none ${
+                          isSelected
+                            ? 'bg-[#004ac6] text-white'
+                            : 'bg-gradient-to-br from-[#c3c6d7] to-[#dce9ff] text-[#004ac6]'
+                        }`}
+                        aria-hidden="true"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">admin_panel_settings</span>
+                      </div>
+                      {contact.hasUnread && (
+                        <span
+                          className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-[#ef4444] rounded-full border-2 border-white shadow-xs animate-pulse ring-2 ring-red-200"
+                          title={contact.unreadCount > 1 ? `Có ${contact.unreadCount} tin nhắn mới` : 'Có tin nhắn mới'}
+                        />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className={`text-body-md font-semibold truncate ${isSelected ? 'text-[#004ac6]' : 'text-[#0b1c30]'}`}>
+                          {contact.name}
+                        </p>
+                        {contact.hasUnread && (
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-[#fee2e2] text-[#dc2626] border border-[#fca5a5] flex-none animate-pulse shadow-xs"
+                            title={contact.unreadCount > 1 ? `Có ${contact.unreadCount} tin nhắn mới` : 'Tin nhắn mới'}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444]" />
+                            {contact.unreadCount > 1 ? contact.unreadCount : 'Mới'}
+                          </span>
+                        )}
+                        <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-[#eff4ff] text-[#004ac6] border border-[#c3d2f6]">
+                          BGH
+                        </span>
+                      </div>
+                      <p className="text-label-sm text-[#64748b] truncate">{contact.title}</p>
+                    </div>
+                    {isSelected && (
+                      <span className="material-symbols-outlined text-[18px] text-[#004ac6] ml-auto flex-none">
+                        chevron_right
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {/* 2. Nhóm Giáo viên chủ nhiệm */}
+      {gvcnList.length > 0 && (
+        <div>
+          <div className="px-4 py-2 bg-[#f8f9ff] text-label-sm font-semibold text-[#434655] uppercase tracking-wider flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-[15px] text-[#004ac6]">school</span>
+            Giáo viên chủ nhiệm
+          </div>
+          <ul role="list" className="divide-y divide-[#f1f5f9]">
+            {gvcnList.map((contact) => {
+              const isSelected = contact.id === selectedId;
+              return (
+                <li key={contact.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(contact)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors relative ${
+                      isSelected
+                        ? 'bg-[#eff4ff] border-l-2 border-[#004ac6]'
+                        : 'hover:bg-[#f8fafc] border-l-2 border-transparent'
+                    }`}
+                  >
+                    <div className="relative flex-none">
+                      <div
+                        className={`w-10 h-10 rounded-full flex items-center justify-center text-label-md font-bold select-none ${
+                          isSelected
+                            ? 'bg-[#004ac6] text-white'
+                            : 'bg-gradient-to-br from-[#c3c6d7] to-[#dce9ff] text-[#565e74]'
+                        }`}
+                        aria-hidden="true"
+                      >
+                        {initials(contact.name)}
+                      </div>
+                      {contact.hasUnread && (
+                        <span
+                          className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-[#ef4444] rounded-full border-2 border-white shadow-xs animate-pulse ring-2 ring-red-200"
+                          title={contact.unreadCount > 1 ? `Có ${contact.unreadCount} tin nhắn mới` : 'Có tin nhắn mới'}
+                        />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className={`text-body-md font-semibold truncate ${isSelected ? 'text-[#004ac6]' : 'text-[#0b1c30]'}`}>
+                          {contact.name}
+                        </p>
+                        {contact.hasUnread && (
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-[#fee2e2] text-[#dc2626] border border-[#fca5a5] flex-none animate-pulse shadow-xs"
+                            title={contact.unreadCount > 1 ? `Có ${contact.unreadCount} tin nhắn mới` : 'Tin nhắn mới'}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444]" />
+                            {contact.unreadCount > 1 ? contact.unreadCount : 'Mới'}
+                          </span>
+                        )}
+                        <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-[#f0fdf4] text-[#15803d] border border-[#86efac]">
+                          GVCN {contact.className}
+                        </span>
+                      </div>
+                      <p className="text-label-sm text-[#475569] truncate">
+                        Con: <strong className="text-[#0b1c30]">{contact.studentName}</strong> (Lớp {contact.className})
+                      </p>
+                    </div>
+                    {isSelected && (
+                      <span className="material-symbols-outlined text-[18px] text-[#004ac6] ml-auto flex-none">
+                        chevron_right
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Danh sách học sinh & phụ huynh bên trái cho GVCN / BGH */
 function ParentList({ students: list, selectedId, onSelect, loading }) {
   if (loading) {
     return (
       <div className="p-4 space-y-3">
-        {[1,2,3].map((i) => (
+        {[1, 2, 3].map((i) => (
           <div key={i} className="flex items-center gap-3">
             <div className="animate-pulse w-10 h-10 rounded-full bg-[#e2e8f0]" />
             <div className="flex-1 space-y-1.5">
@@ -233,19 +416,57 @@ function ParentList({ students: list, selectedId, onSelect, loading }) {
         const isSelected = s.id === selectedId;
         return (
           <li key={s.id}>
-            <button type="button" onClick={() => onSelect(s)}
-              className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
-                isSelected ? 'bg-[#eff4ff] border-l-2 border-[#004ac6]' : 'hover:bg-[#f8fafc] border-l-2 border-transparent'
-              }`}>
-              <div className={`flex-none w-10 h-10 rounded-full flex items-center justify-center text-label-md font-bold select-none ${isSelected ? 'bg-[#004ac6] text-white' : 'bg-gradient-to-br from-[#c3c6d7] to-[#dce9ff] text-[#565e74]'}`}
-                aria-hidden="true">
-                {initials(s.name)}
+            <button
+              type="button"
+              onClick={() => onSelect(s)}
+              className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors relative ${
+                isSelected
+                  ? 'bg-[#eff4ff] border-l-2 border-[#004ac6]'
+                  : 'hover:bg-[#f8fafc] border-l-2 border-transparent'
+              }`}
+            >
+              {/* Avatar kèm icon chấm đỏ nổi bật khi có tin nhắn mới */}
+              <div className="relative flex-none">
+                <div
+                  className={`w-10 h-10 rounded-full flex items-center justify-center text-label-md font-bold select-none ${
+                    isSelected
+                      ? 'bg-[#004ac6] text-white'
+                      : 'bg-gradient-to-br from-[#c3c6d7] to-[#dce9ff] text-[#565e74]'
+                  }`}
+                  aria-hidden="true"
+                >
+                  {initials(s.name)}
+                </div>
+                {s.hasUnread && (
+                  <span
+                    className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-[#ef4444] rounded-full border-2 border-white shadow-xs animate-pulse ring-2 ring-red-200"
+                    title={s.unreadCount > 1 ? `Có ${s.unreadCount} tin nhắn mới` : 'Có tin nhắn mới'}
+                  />
+                )}
               </div>
-              <div className="min-w-0">
-                <p className={`text-body-md font-medium truncate ${isSelected ? 'text-[#004ac6]' : 'text-[#0b1c30]'}`}>{s.name}</p>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className={`text-body-md truncate ${isSelected ? 'text-[#004ac6] font-semibold' : 'text-[#0b1c30] font-medium'}`}>
+                    {s.name}
+                  </p>
+                  {/* Icon chấm đỏ + nhãn mới trên tên người dùng */}
+                  {s.hasUnread && (
+                    <span
+                      className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-[#fee2e2] text-[#dc2626] border border-[#fca5a5] flex-none animate-pulse shadow-xs"
+                      title={s.unreadCount > 1 ? `Có ${s.unreadCount} tin nhắn mới` : 'Tin nhắn mới'}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444]" />
+                      {s.unreadCount > 1 ? s.unreadCount : 'Mới'}
+                    </span>
+                  )}
+                </div>
                 <p className="text-label-sm text-[#64748b] truncate">{parentDisplayName(s)}</p>
               </div>
-              {isSelected && <span className="material-symbols-outlined text-[18px] text-[#004ac6] ml-auto flex-none" aria-hidden="true">chevron_right</span>}
+              {isSelected && (
+                <span className="material-symbols-outlined text-[18px] text-[#004ac6] ml-auto flex-none" aria-hidden="true">
+                  chevron_right
+                </span>
+              )}
             </button>
           </li>
         );
@@ -254,80 +475,214 @@ function ParentList({ students: list, selectedId, onSelect, loading }) {
   );
 }
 
-/** Bubble tin nhắn */
-function ChatBubble({ message }) {
-  const isGV = message.from === 'gv';
+/** Bubble tin nhắn linh hoạt theo góc nhìn người dùng */
+function ChatBubble({ message, isParent }) {
+  const isMe = isParent
+    ? message.from === 'ph'
+    : (message.from === 'gv' || message.from === 'bgh');
+
+  const timeStr = message.sentAt
+    ? new Date(message.sentAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+    : '';
+
   return (
-    <div className={`flex ${isGV ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[78%] px-4 py-2.5 rounded-2xl text-body-sm leading-relaxed ${
-        isGV ? 'bg-[#004ac6] text-white rounded-br-sm' : 'bg-[#f1f5f9] text-[#0b1c30] rounded-bl-sm'
-      }`}>
+    <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+      <div
+        className={`max-w-[78%] px-4 py-2.5 rounded-2xl text-body-sm leading-relaxed shadow-xs ${
+          isMe
+            ? 'bg-[#004ac6] text-white rounded-br-sm'
+            : 'bg-[#f1f5f9] text-[#0b1c30] rounded-bl-sm border border-[#e2e8f0]'
+        }`}
+      >
         {message.text}
       </div>
+      {timeStr && (
+        <span className="text-[11px] text-[#94a3b8] px-1 mt-0.5 select-none">
+          {timeStr}
+        </span>
+      )}
     </div>
   );
 }
 
 /** Thread hội thoại bên phải */
-function ConversationThread({ student, messages, loadingThread, onSendMessage, isSendingMsg }) {
+function ConversationThread({
+  contact,
+  messages,
+  loadingThread,
+  onSendMessage,
+  isSendingMsg,
+  isParent,
+  isBGH,
+  onSwitchBghChannel,
+}) {
   const [input, setInput] = useState('');
+  const messagesEndRef = useRef(null);
+
+  // Tự động cuộn xuống cuối khi có tin nhắn mới
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   const send = () => {
     const trimmed = input.trim();
     if (!trimmed) return;
-    onSendMessage(student, trimmed);
+    onSendMessage(contact, trimmed);
     setInput('');
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
   };
 
   return (
     <div className="flex flex-col h-full">
       {/* Thread header */}
-      <div className="flex items-center gap-3 px-5 py-4 border-b border-[#e2e8f0] bg-[#f8f9ff]">
-        <div className="flex-none w-10 h-10 rounded-full bg-gradient-to-br from-[#c3c6d7] to-[#dce9ff] flex items-center justify-center text-label-md font-bold text-[#565e74] select-none" aria-hidden="true">
-          {initials(student.name)}
+      <div className="flex items-center justify-between flex-wrap gap-3 px-5 py-3.5 border-b border-[#e2e8f0] bg-[#f8f9ff]">
+        <div className="flex items-center gap-3">
+          <div
+            className="flex-none w-10 h-10 rounded-full bg-gradient-to-br from-[#c3c6d7] to-[#dce9ff] flex items-center justify-center text-label-md font-bold text-[#004ac6] select-none shadow-xs"
+            aria-hidden="true"
+          >
+            {contact.role === 'BGH' ? (
+              <span className="material-symbols-outlined text-[20px]">account_balance</span>
+            ) : (
+              initials(contact.name)
+            )}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-body-md font-semibold text-[#0b1c30]">{contact.name}</p>
+              {contact.role === 'BGH' && (
+                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#eff4ff] text-[#004ac6] border border-[#c3d2f6]">
+                  Ban Giám Hiệu
+                </span>
+              )}
+              {contact.role === 'GVCN' && (
+                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#f0fdf4] text-[#15803d] border border-[#86efac]">
+                  GVCN {contact.className}
+                </span>
+              )}
+              {contact.role === 'PH' && (
+                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#f1f5f9] text-[#334155] border border-[#cbd5e1]">
+                  Lớp {contact.className}
+                </span>
+              )}
+            </div>
+            <p className="text-label-sm text-[#64748b]">
+              {isParent
+                ? (contact.role === 'BGH' ? contact.title : `Con: ${contact.studentName} — Lớp ${contact.className}`)
+                : isBGH
+                  ? (contact.conversationType === 'BGH'
+                      ? `Trao đổi trực tiếp Ban Giám Hiệu ↔ Phụ huynh em ${contact.studentName}`
+                      : `Giám sát trao đổi GVCN ↔ Phụ huynh em ${contact.studentName}`)
+                  : `${contact.title} • Mã HS: ${contact.studentId}`}
+            </p>
+          </div>
         </div>
-        <div>
-          <p className="text-body-md font-semibold text-[#0b1c30]">{student.name}</p>
-          <p className="text-label-sm text-[#64748b]">{parentDisplayName(student)}</p>
-        </div>
-        <span className="ml-auto inline-flex items-center gap-1 text-label-sm bg-[#f0fdf4] text-[#15803d] border border-[#86efac] px-2.5 py-0.5 rounded-full">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] inline-block" />
+
+        {/* Thanh chuyển kênh dành riêng cho Ban Giám Hiệu */}
+        {isBGH && onSwitchBghChannel && (
+          <div className="flex items-center gap-1 bg-[#e2e8f0]/70 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => onSwitchBghChannel('BGH')}
+              className={`px-3 py-1.5 rounded-lg text-label-sm font-semibold transition-all flex items-center gap-1.5 ${
+                contact.conversationType === 'BGH'
+                  ? 'bg-[#004ac6] text-white shadow-xs'
+                  : 'text-[#475569] hover:text-[#0b1c30] hover:bg-white/60'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">account_balance</span>
+              Kênh Ban Giám Hiệu
+            </button>
+            <button
+              type="button"
+              onClick={() => onSwitchBghChannel('GVCN')}
+              className={`px-3 py-1.5 rounded-lg text-label-sm font-semibold transition-all flex items-center gap-1.5 ${
+                contact.conversationType === 'GVCN'
+                  ? 'bg-[#004ac6] text-white shadow-xs'
+                  : 'text-[#475569] hover:text-[#0b1c30] hover:bg-white/60'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">school</span>
+              Kênh GVCN ({contact.className})
+            </button>
+          </div>
+        )}
+
+        <span className="inline-flex items-center gap-1 text-label-sm bg-[#f0fdf4] text-[#15803d] border border-[#86efac] px-2.5 py-0.5 rounded-full">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] inline-block animate-pulse" />
           Đang hoạt động
         </span>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 min-h-0">
+      {/* Thông báo ngữ cảnh kênh cho BGH */}
+      {isBGH && contact.conversationType === 'BGH' && (
+        <div className="px-5 py-2 bg-[#eff4ff] text-[12px] text-[#004ac6] flex items-center gap-2 border-b border-[#c3d2f6]">
+          <span className="material-symbols-outlined text-[16px] text-[#004ac6]">info</span>
+          <span>
+            Tin nhắn bạn gửi tại đây sẽ hiển thị trong khung <strong>"Ban Giám Hiệu"</strong> trên sổ liên lạc của Phụ huynh học sinh.
+          </span>
+        </div>
+      )}
+
+      {isBGH && contact.conversationType === 'GVCN' && (
+        <div className="px-5 py-2 bg-[#fefce8] text-[12px] text-[#854d0e] flex items-center gap-2 border-b border-[#fef08a]">
+          <span className="material-symbols-outlined text-[16px] text-[#ca8a04]">visibility</span>
+          <span>
+            Đang xem kênh trao đổi giữa <strong>Giáo viên chủ nhiệm lớp {contact.className}</strong> và Phụ huynh học sinh.
+          </span>
+        </div>
+      )}
+
+      {/* Messages list */}
+      <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-3 min-h-0 bg-[#fafafa]/50 chat-scrollbar">
         {loadingThread ? (
-          <div className="flex justify-center py-8">
+          <div className="flex flex-col items-center justify-center py-12 text-[#94a3b8] gap-2">
             <span className="material-symbols-outlined text-[32px] text-[#cbd5e1] animate-spin">progress_activity</span>
+            <p className="text-body-sm">Đang tải lịch sử trò chuyện...</p>
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center py-8 text-[#94a3b8]">
-            <span className="material-symbols-outlined text-[36px] mb-2">chat_bubble_outline</span>
-            <p className="text-body-sm">Chưa có tin nhắn nào. Hãy bắt đầu cuộc trò chuyện!</p>
+          <div className="flex flex-col items-center py-12 text-[#94a3b8]">
+            <span className="material-symbols-outlined text-[42px] mb-2 text-[#cbd5e1]">chat_bubble_outline</span>
+            <p className="text-body-sm font-medium text-[#475569]">Chưa có tin nhắn nào trong kênh này.</p>
+            <p className="text-label-sm text-[#94a3b8] mt-0.5">Hãy nhập nội dung bên dưới để bắt đầu trao đổi!</p>
           </div>
         ) : (
-          messages.map((msg, idx) => <ChatBubble key={msg.id ?? idx} message={msg} />)
+          messages.map((msg, idx) => (
+            <ChatBubble key={msg.id ?? idx} message={msg} isParent={isParent} />
+          ))
         )}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Input bar */}
       <div className="px-4 py-3 border-t border-[#e2e8f0] bg-white flex items-end gap-2">
-        <textarea rows={1} value={input} onChange={(e) => setInput(e.target.value)}
+        <textarea
+          rows={1}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Nhập tin nhắn... (Enter để gửi)"
+          placeholder="Nhập tin nhắn trao đổi... (Enter để gửi)"
           className="flex-1 border border-[#e2e8f0] rounded-xl px-3 py-2.5 text-body-md text-[#0b1c30] bg-white focus:outline-none focus:border-[#004ac6] focus:ring-2 focus:ring-[#004ac6]/15 transition-all resize-none"
-          style={{ minHeight: '42px', maxHeight: '120px' }} />
-        <button type="button" onClick={send}
+          style={{ minHeight: '42px', maxHeight: '120px' }}
+        />
+        <button
+          type="button"
+          onClick={send}
           disabled={!input.trim() || isSendingMsg}
           aria-label="Gửi tin nhắn"
-          className="flex-none inline-flex items-center justify-center w-10 h-10 rounded-xl bg-[#004ac6] hover:bg-[#003ea8] disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all active:scale-95">
-          <span className="material-symbols-outlined text-[20px]">send</span>
+          className="flex-none inline-flex items-center justify-center w-10 h-10 rounded-xl bg-[#004ac6] hover:bg-[#003ea8] disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all active:scale-95 shadow-xs"
+        >
+          {isSendingMsg ? (
+            <span className="material-symbols-outlined text-[20px] animate-spin">progress_activity</span>
+          ) : (
+            <span className="material-symbols-outlined text-[20px]">send</span>
+          )}
         </button>
       </div>
     </div>
@@ -337,38 +692,47 @@ function ConversationThread({ student, messages, loadingThread, onSendMessage, i
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ParentCommunicationPage() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
+  const isParent = role === 'PH';
+  const isGVCN   = role === 'GVCN';
+  const isBGH    = role === 'BGH';
 
   // ── Core state ────────────────────────────────────────────────────────────
-  const [activeTab,    setActiveTab]    = useState('thongbao');
+  const [activeTab, setActiveTab] = useState('thongbao');
 
   // Notifications tab
   const [notifications, setNotifications] = useState([]);
-  const [classes,        setClasses]       = useState([]);
-  const [loading,        setLoading]       = useState(true);
-  const [error,          setError]         = useState(null);
-  const [isFormOpen,     setIsFormOpen]    = useState(false);
-  const [isSending,      setIsSending]     = useState(false);
-  const [sendMessage,    setSendMessage]   = useState(null);
+  const [classes,       setClasses]       = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [error,         setError]         = useState(null);
+  const [isFormOpen,    setIsFormOpen]    = useState(false);
+  const [isSending,     setIsSending]     = useState(false);
+  const [sendMessage,   setSendMessage]   = useState(null);
 
-  // Trao đổi tab
-  const [selectedClass,   setSelectedClass]   = useState('');
-  const [classStudents,   setClassStudents]   = useState([]);
-  const [loadingStudents, setLoadingStudents] = useState(false);
-  const [selectedStudent, setSelectedStudent] = useState(null);
-  const [thread,          setThread]          = useState([]);
-  const [loadingThread,   setLoadingThread]   = useState(false);
-  const [isSendingMsg,    setIsSendingMsg]    = useState(false);
+  // Trao đổi tab — Phụ huynh
+  const [parentContacts,   setParentContacts]   = useState({ bgh: [], gvcn: [] });
+  const [loadingContacts,  setLoadingContacts]  = useState(false);
+
+  // Trao đổi tab — GVCN / BGH
+  const [selectedClass,    setSelectedClass]    = useState('');
+  const [classStudents,    setClassStudents]    = useState([]);
+  const [loadingStudents,  setLoadingStudents]  = useState(false);
+
+  // Active chat conversation (dùng chung cho cả 2 view)
+  const [selectedContact,  setSelectedContact]  = useState(null);
+  const [thread,           setThread]           = useState([]);
+  const [loadingThread,    setLoadingThread]    = useState(false);
+  const [isSendingMsg,     setIsSendingMsg]     = useState(false);
 
   // Search/filter state - tab Thông báo
   const [notifSearch,      setNotifSearch]      = useState('');
   const [notifFilterType,  setNotifFilterType]  = useState('all');
   const [notifFilterClass, setNotifFilterClass] = useState('all');
 
-  // Search state - tab Trao đổi
+  // Search state - tab Trao đổi (GVCN/BGH)
   const [studentSearch, setStudentSearch] = useState('');
 
-  // ── Fetch page data on mount ──────────────────────────────────────────────
+  // ── 1. Fetch dữ liệu khởi tạo trang ──────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -391,12 +755,38 @@ export default function ParentCommunicationPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // ── Fetch students when class changes (Trao đổi tab) ─────────────────────
+  // ── 2. Nếu là PH: Fetch danh bạ liên hệ (BGH + GVCN các lớp của con) ───────
   useEffect(() => {
-    if (!selectedClass) return;
+    if (!isParent) return;
+
+    let cancelled = false;
+    setLoadingContacts(true);
+    fetchCommunicationContacts()
+      .then((data) => {
+        if (!cancelled) {
+          setParentContacts({
+            bgh: data?.bgh || [],
+            gvcn: data?.gvcn || [],
+          });
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message || 'Không thể tải danh sách người liên hệ.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingContacts(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [isParent]);
+
+  // ── 3. Nếu là GVCN/BGH: Fetch học sinh khi chọn lớp ────────────────────────
+  useEffect(() => {
+    if (isParent || !selectedClass) return;
+
     let cancelled = false;
     setLoadingStudents(true);
-    setSelectedStudent(null);
+    setSelectedContact(null);
     setThread([]);
 
     fetchCommunicationStudents(selectedClass)
@@ -405,24 +795,141 @@ export default function ParentCommunicationPage() {
       .finally(() => { if (!cancelled) setLoadingStudents(false); });
 
     return () => { cancelled = true; };
-  }, [selectedClass]);
+  }, [isParent, selectedClass]);
 
-  // ── Select parent → load thread ───────────────────────────────────────────
-  const handleSelectParent = useCallback(async (student) => {
-    setSelectedStudent(student);
+  // ── 4. Chọn người liên hệ để mở thread chat ──────────────────────────────
+  const handleSelectContact = useCallback(async (contact) => {
+    setSelectedContact(contact);
     setThread([]);
     setLoadingThread(true);
     try {
-      const msgs = await fetchMessageThread(student.id);
+      const msgs = await fetchMessageThread(contact.studentId, contact.conversationType || 'GVCN');
       setThread(msgs);
-    } catch {
+    } catch (err) {
+      setError(err.message || 'Không thể tải tin nhắn hội thoại.');
       setThread([]);
     } finally {
       setLoadingThread(false);
     }
   }, []);
 
-  // ── Send notification ─────────────────────────────────────────────────────
+  // Khi Phụ huynh chọn BGH hoặc GVCN
+  const handleSelectParentContact = useCallback((contact) => {
+    // Xóa ngay chấm đỏ của contact này
+    setParentContacts((prev) => ({
+      bgh: (prev.bgh || []).map((c) => (c.id === contact.id ? { ...c, hasUnread: false, unreadCount: 0 } : c)),
+      gvcn: (prev.gvcn || []).map((c) => (c.id === contact.id ? { ...c, hasUnread: false, unreadCount: 0 } : c)),
+    }));
+    handleSelectContact(contact);
+  }, [handleSelectContact]);
+
+  // State kênh chat dành cho BGH (mặc định BGH: trao đổi trực tiếp Ban Giám hiệu ↔ Phụ huynh)
+  const [bghActiveChannel, setBghActiveChannel] = useState('BGH');
+
+  // Khi chọn học sinh trong view GVCN/BGH
+  const handleSelectStudent = useCallback((student) => {
+    // Xóa ngay chấm đỏ của học sinh này trên panel trái
+    setClassStudents((prev) =>
+      prev.map((s) => (s.id === student.id ? { ...s, hasUnread: false, unreadCount: 0 } : s))
+    );
+
+    const contact = {
+      id:               student.id,
+      name:             student.name,
+      title:            parentDisplayName(student),
+      role:             'PH',
+      conversationType: isBGH ? bghActiveChannel : 'GVCN',
+      studentId:        student.id,
+      studentName:      student.name,
+      className:        student.className,
+    };
+    handleSelectContact(contact);
+  }, [handleSelectContact, isBGH, bghActiveChannel]);
+
+  // Chuyển kênh hội thoại cho BGH (Ban Giám Hiệu ↔ GVCN)
+  const handleSwitchBghChannel = useCallback((channel) => {
+    setBghActiveChannel(channel);
+    if (selectedContact) {
+      handleSelectContact({
+        ...selectedContact,
+        conversationType: channel,
+      });
+    }
+  }, [selectedContact, handleSelectContact]);
+
+  // ── 5. Polling tự động khi đang mở cuộc hội thoại (mỗi 3 giây) ─────────────
+  useEffect(() => {
+    if (!selectedContact?.studentId) return;
+
+    const timer = setInterval(async () => {
+      try {
+        const msgs = await fetchMessageThread(
+          selectedContact.studentId,
+          selectedContact.conversationType || 'GVCN'
+        );
+        // Cập nhật thread mới nhất nếu có thay đổi
+        setThread((prev) => {
+          if (JSON.stringify(prev) !== JSON.stringify(msgs)) {
+            return msgs;
+          }
+          return prev;
+        });
+      } catch {
+        // Không block UI nếu một lần poll bị lỗi mạng
+      }
+    }, 3000);
+
+    return () => clearInterval(timer);
+  }, [selectedContact]);
+
+  // ── 5b. Polling định kỳ cập nhật chấm đỏ tin nhắn mới cho danh sách ────────
+  useEffect(() => {
+    if (activeTab !== 'traodoi') return;
+
+    const timer = setInterval(() => {
+      if (isParent) {
+        fetchCommunicationContacts()
+          .then((data) => {
+            if (data) {
+              setParentContacts((prev) => ({
+                bgh: (data.bgh || []).map((newC) => {
+                  if (selectedContact?.id === newC.id) {
+                    return { ...newC, hasUnread: false, unreadCount: 0 };
+                  }
+                  return newC;
+                }),
+                gvcn: (data.gvcn || []).map((newC) => {
+                  if (selectedContact?.id === newC.id) {
+                    return { ...newC, hasUnread: false, unreadCount: 0 };
+                  }
+                  return newC;
+                }),
+              }));
+            }
+          })
+          .catch(() => {});
+      } else if (selectedClass) {
+        fetchCommunicationStudents(selectedClass)
+          .then((data) => {
+            if (Array.isArray(data)) {
+              setClassStudents((prev) =>
+                data.map((item) => {
+                  if (selectedContact?.studentId === item.id) {
+                    return { ...item, hasUnread: false, unreadCount: 0 };
+                  }
+                  return item;
+                })
+              );
+            }
+          })
+          .catch(() => {});
+      }
+    }, 4000);
+
+    return () => clearInterval(timer);
+  }, [activeTab, isParent, selectedClass, selectedContact]);
+
+  // ── 6. Gửi thông báo mới (GVCN/BGH) ──────────────────────────────────────
   const handleSend = async (formData) => {
     setIsSending(true);
     setSendMessage(null);
@@ -441,30 +948,35 @@ export default function ParentCommunicationPage() {
     }
   };
 
-  // ── Send chat message ─────────────────────────────────────────────────────
-  const handleSendChatMessage = useCallback(async (student, text) => {
+  // ── 7. Gửi tin nhắn chat ─────────────────────────────────────────────────
+  const handleSendChatMessage = useCallback(async (contact, text) => {
     setIsSendingMsg(true);
-    // Optimistic update
-    const optimistic = { id: `tmp-${Date.now()}`, from: 'gv', text, sentAt: new Date().toISOString() };
+    const optimistic = {
+      id: `tmp-${Date.now()}`,
+      from: isParent ? 'ph' : (isBGH ? 'bgh' : 'gv'),
+      text,
+      conversationType: contact.conversationType || 'GVCN',
+      sentAt: new Date().toISOString(),
+    };
     setThread((prev) => [...prev, optimistic]);
+
     try {
       const saved = await sendMessageToThread({
-        studentId: student.id,
-        className: student.className,
-        fromRole:  'gv',
-        message:   text,
+        studentId:        contact.studentId,
+        className:        contact.className,
+        fromRole:         isParent ? 'ph' : (isBGH ? 'bgh' : 'gv'),
+        conversationType: contact.conversationType || 'GVCN',
+        message:          text,
       });
-      // Replace optimistic with saved
       setThread((prev) => prev.map((m) => (m.id === optimistic.id ? saved : m)));
-    } catch {
-      // Remove optimistic on failure
+    } catch (err) {
       setThread((prev) => prev.filter((m) => m.id !== optimistic.id));
+      setError(err.message || 'Không thể gửi tin nhắn. Vui lòng thử lại.');
     } finally {
       setIsSendingMsg(false);
     }
-  }, []);
+  }, [isParent, isBGH]);
 
-  // ── Tab button helper ─────────────────────────────────────────────────────
   // Filtered notifications
   const filteredNotifications = useMemo(() => {
     return notifications.filter((notif) => {
@@ -476,7 +988,7 @@ export default function ParentCommunicationPage() {
     });
   }, [notifications, notifSearch, notifFilterType, notifFilterClass]);
 
-  // Filtered students
+  // Filtered students (GVCN/BGH)
   const filteredStudents = useMemo(() => {
     const q = studentSearch.trim().toLowerCase();
     if (!q) return classStudents;
@@ -493,21 +1005,23 @@ export default function ParentCommunicationPage() {
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6">
+    <div className={activeTab === 'traodoi' ? 'h-[calc(100vh-112px)] flex flex-col space-y-3 overflow-hidden' : 'space-y-6'}>
 
       {/* ── Page header ── */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex items-center justify-between flex-wrap gap-2 flex-none">
         <div>
           <h1 className="text-headline-md font-semibold text-[#0b1c30]">Sổ liên lạc phụ huynh</h1>
           <p className="text-body-sm text-[#64748b] mt-0.5">
-            Gửi thông báo và trao đổi trực tiếp với phụ huynh học sinh
+            {isParent
+              ? 'Kênh liên lạc trực tiếp giữa Phụ huynh với Ban Giám Hiệu và Giáo viên chủ nhiệm'
+              : 'Gửi thông báo và trao đổi trực tiếp với phụ huynh học sinh'}
           </p>
         </div>
       </div>
 
       {/* ── Error Banner ── */}
       {error && (
-        <div className="flex items-center gap-3 p-4 rounded-lg bg-[#fef2f2] border border-[#fecaca] text-[#b91c1c]" role="alert">
+        <div className="flex items-center gap-3 p-3 rounded-lg bg-[#fef2f2] border border-[#fecaca] text-[#b91c1c] flex-none" role="alert">
           <span className="material-symbols-outlined text-[20px]">error</span>
           <p className="text-body-sm font-medium flex-1">{error}</p>
           <button className="text-label-sm underline hover:no-underline" onClick={() => setError(null)}>Đóng</button>
@@ -515,7 +1029,7 @@ export default function ParentCommunicationPage() {
       )}
 
       {/* ── Tab switcher ── */}
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap flex-none">
         <button type="button" className={tabCls('thongbao')} onClick={() => setActiveTab('thongbao')} aria-selected={activeTab === 'thongbao'}>
           <span className="material-symbols-outlined text-[18px]" aria-hidden="true">campaign</span>
           Thông báo
@@ -527,7 +1041,9 @@ export default function ParentCommunicationPage() {
           <span className="material-symbols-outlined text-[18px]" aria-hidden="true">forum</span>
           Trao đổi
           <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-label-sm font-semibold ${activeTab === 'traodoi' ? 'bg-white/25 text-white' : 'bg-[#eff4ff] text-[#004ac6]'}`}>
-            {classStudents.length}
+            {isParent
+              ? (parentContacts.bgh.length + parentContacts.gvcn.length)
+              : classStudents.length}
           </span>
         </button>
       </div>
@@ -541,18 +1057,24 @@ export default function ParentCommunicationPage() {
               <span className="font-semibold text-[#0b1c30]">{filteredNotifications.length}</span>
               {filteredNotifications.length !== notifications.length ? ` / ${notifications.length}` : ''} thông báo, sắp xếp theo mới nhất
             </p>
-            <button type="button" onClick={() => { setIsFormOpen((p) => !p); setSendMessage(null); }}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-body-md font-semibold shadow-elevation-1 transition-all active:scale-[0.99] ${
-                isFormOpen ? 'bg-[#f1f5f9] text-[#334155] border border-[#e2e8f0]' : 'bg-[#004ac6] hover:bg-[#003ea8] text-white'
-              }`}>
-              <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{isFormOpen ? 'expand_less' : 'add'}</span>
-              {isFormOpen ? 'Thu gọn' : 'Tạo thông báo mới'}
-            </button>
+
+            {/* Chỉ GVCN và BGH mới có nút "Tạo thông báo mới" */}
+            {!isParent && (
+              <button
+                type="button"
+                onClick={() => { setIsFormOpen((p) => !p); setSendMessage(null); }}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-body-md font-semibold shadow-elevation-1 transition-all active:scale-[0.99] ${
+                  isFormOpen ? 'bg-[#f1f5f9] text-[#334155] border border-[#e2e8f0]' : 'bg-[#004ac6] hover:bg-[#003ea8] text-white'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{isFormOpen ? 'expand_less' : 'add'}</span>
+                {isFormOpen ? 'Thu gọn' : 'Tạo thông báo mới'}
+              </button>
+            )}
           </div>
 
           {/* Search & Filter - Thông báo */}
           <div className="flex flex-wrap gap-3 pb-1">
-            {/* Ô tìm kiếm */}
             <div className="relative flex-1 min-w-[200px]">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-[#94a3b8]" aria-hidden="true">search</span>
               <input
@@ -563,7 +1085,6 @@ export default function ParentCommunicationPage() {
                 className="w-full border border-[#e2e8f0] rounded-lg pl-9 pr-3 py-2 text-body-md text-[#0b1c30] bg-white focus:outline-none focus:border-[#004ac6] focus:ring-2 focus:ring-[#004ac6]/15 transition-all"
               />
             </div>
-            {/* Lọc loại */}
             <select
               value={notifFilterType}
               onChange={(e) => setNotifFilterType(e.target.value)}
@@ -575,27 +1096,22 @@ export default function ParentCommunicationPage() {
               <option value="event">Sự kiện</option>
               <option value="general">Thông báo chung</option>
             </select>
-            {/* Lọc lớp */}
-            <select
-              value={notifFilterClass}
-              onChange={(e) => setNotifFilterClass(e.target.value)}
-              className="border border-[#e2e8f0] rounded-lg px-3 py-2 text-body-md text-[#0b1c30] bg-white focus:outline-none focus:border-[#004ac6] focus:ring-2 focus:ring-[#004ac6]/15 transition-all"
-            >
-              <option value="all">Tất cả lớp</option>
-              {classes.map((cls) => (
-                <option key={cls.id} value={cls.id}>{cls.name}</option>
-              ))}
-            </select>
-            {/* Số kết quả */}
-            {(notifSearch || notifFilterType !== 'all' || notifFilterClass !== 'all') && (
-              <span className="inline-flex items-center text-body-sm text-[#64748b] self-center">
-                {filteredNotifications.length} kết quả
-              </span>
+            {classes.length > 0 && (
+              <select
+                value={notifFilterClass}
+                onChange={(e) => setNotifFilterClass(e.target.value)}
+                className="border border-[#e2e8f0] rounded-lg px-3 py-2 text-body-md text-[#0b1c30] bg-white focus:outline-none focus:border-[#004ac6] focus:ring-2 focus:ring-[#004ac6]/15 transition-all"
+              >
+                <option value="all">Tất cả lớp</option>
+                {classes.map((cls) => (
+                  <option key={cls.id} value={cls.id}>{cls.name}</option>
+                ))}
+              </select>
             )}
           </div>
 
-          {/* Form */}
-          {isFormOpen && (
+          {/* Form tạo thông báo */}
+          {isFormOpen && !isParent && (
             <NotificationForm
               classes={classes}
               onSend={handleSend}
@@ -612,10 +1128,10 @@ export default function ParentCommunicationPage() {
             </p>
           )}
 
-          {/* List */}
+          {/* List thông báo */}
           {loading ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {[1,2,3,4].map((i) => <SkeletonCard key={i} />)}
+              {[1, 2, 3, 4].map((i) => <SkeletonCard key={i} />)}
             </div>
           ) : notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-[#94a3b8]">
@@ -638,72 +1154,125 @@ export default function ParentCommunicationPage() {
 
       {/* ═══ TAB: TRAO ĐỔI ════════════════════════════════════════════════════ */}
       {activeTab === 'traodoi' && (
-        <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-elevation-1 overflow-hidden">
-          <div className="grid grid-cols-1 md:grid-cols-[280px_1fr]" style={{ minHeight: '520px' }}>
+        <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-elevation-1 overflow-hidden flex-1 min-h-0 flex flex-col">
+          <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] flex-1 min-h-0 overflow-hidden">
 
-            {/* Left: Parent list */}
-            <div className="border-b md:border-b-0 md:border-r border-[#e2e8f0] flex flex-col">
-              {/* Class selector */}
-              <div className="px-4 py-3.5 border-b border-[#f1f5f9] bg-[#f8f9ff] space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px] text-[#004ac6]" aria-hidden="true">groups</span>
-                  <span className="text-body-md font-semibold text-[#0b1c30]">Phụ huynh lớp</span>
-                  <span className="ml-auto text-label-sm bg-[#eff4ff] text-[#004ac6] px-2 py-0.5 rounded-full font-medium">
-                    {filteredStudents.length}
-                  </span>
-                </div>
-                <select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}
-                  className="w-full border border-[#e2e8f0] rounded-lg px-3 py-1.5 text-body-sm text-[#0b1c30] bg-white focus:outline-none focus:border-[#004ac6] transition-all">
-                  {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                {/* Tìm kiếm học sinh */}
-                <div className="relative">
-                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[16px] text-[#94a3b8]" aria-hidden="true">search</span>
-                  <input
-                    type="text"
-                    value={studentSearch}
-                    onChange={(e) => setStudentSearch(e.target.value)}
-                    placeholder="Tìm học sinh..."
-                    className="w-full border border-[#e2e8f0] rounded-lg pl-9 pr-3 py-1.5 text-body-sm text-[#0b1c30] bg-white focus:outline-none focus:border-[#004ac6] transition-all"
-                  />
-                </div>
-                {studentSearch && (
-                  <p className="text-label-sm text-[#64748b]">{filteredStudents.length} / {classStudents.length} học sinh</p>
-                )}
-              </div>
+            {/* Left Panel: Phân quyền theo Role */}
+            <div className="border-b md:border-b-0 md:border-r border-[#e2e8f0] flex flex-col h-full min-h-0 overflow-hidden bg-white">
 
-              {/* Scrollable student list */}
-              <div className="overflow-y-auto flex-1">
-                <ParentList
-                  students={filteredStudents}
-                  selectedId={selectedStudent?.id ?? null}
-                  onSelect={handleSelectParent}
-                  loading={loadingStudents}
-                />
-              </div>
+              {/* ── CASE 1: Role PHỤ HUYNH ── */}
+              {isParent ? (
+                <>
+                  <div className="px-4 py-3.5 border-b border-[#f1f5f9] bg-[#f8f9ff] flex-none">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[18px] text-[#004ac6]">contacts</span>
+                      <span className="text-body-md font-semibold text-[#0b1c30]">Người có thể liên hệ</span>
+                      <span className="ml-auto text-label-sm bg-[#eff4ff] text-[#004ac6] px-2 py-0.5 rounded-full font-medium">
+                        {parentContacts.bgh.length + parentContacts.gvcn.length}
+                      </span>
+                    </div>
+                    <p className="text-label-sm text-[#64748b] mt-1">
+                      Ban Giám hiệu và Giáo viên chủ nhiệm của con
+                    </p>
+                  </div>
+
+                  <div className="overflow-y-auto overscroll-contain flex-1 min-h-0 chat-scrollbar">
+                    <ContactListForParent
+                      contacts={parentContacts}
+                      selectedId={selectedContact?.id ?? null}
+                      onSelect={handleSelectParentContact}
+                      loading={loadingContacts}
+                    />
+                  </div>
+                </>
+              ) : (
+                /* ── CASE 2: Role GVCN / BGH ── */
+                <>
+                  <div className="px-4 py-3.5 border-b border-[#f1f5f9] bg-[#f8f9ff] space-y-2 flex-none">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[18px] text-[#004ac6]" aria-hidden="true">groups</span>
+                      <span className="text-body-md font-semibold text-[#0b1c30]">
+                        {isGVCN ? 'Phụ huynh lớp chủ nhiệm' : 'Phụ huynh lớp'}
+                      </span>
+                      <span className="ml-auto text-label-sm bg-[#eff4ff] text-[#004ac6] px-2 py-0.5 rounded-full font-medium">
+                        {filteredStudents.length}
+                      </span>
+                    </div>
+
+                    {/* Dropdown chọn lớp: BGH chọn tự do, GVCN chỉ có lớp của mình */}
+                    {classes.length > 0 && (
+                      <select
+                        value={selectedClass}
+                        onChange={(e) => setSelectedClass(e.target.value)}
+                        disabled={isGVCN && classes.length === 1}
+                        className={`w-full border border-[#e2e8f0] rounded-lg px-3 py-1.5 text-body-sm text-[#0b1c30] bg-white focus:outline-none focus:border-[#004ac6] transition-all ${
+                          isGVCN ? 'cursor-default bg-[#f8fafc]' : ''
+                        }`}
+                      >
+                        {classes.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    )}
+
+                    {/* Tìm kiếm học sinh */}
+                    <div className="relative">
+                      <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[16px] text-[#94a3b8]" aria-hidden="true">search</span>
+                      <input
+                        type="text"
+                        value={studentSearch}
+                        onChange={(e) => setStudentSearch(e.target.value)}
+                        placeholder="Tìm học sinh..."
+                        className="w-full border border-[#e2e8f0] rounded-lg pl-9 pr-3 py-1.5 text-body-sm text-[#0b1c30] bg-white focus:outline-none focus:border-[#004ac6] transition-all"
+                      />
+                    </div>
+                    {studentSearch && (
+                      <p className="text-label-sm text-[#64748b]">{filteredStudents.length} / {classStudents.length} học sinh</p>
+                    )}
+                  </div>
+
+                  <div className="overflow-y-auto overscroll-contain flex-1 min-h-0 chat-scrollbar">
+                    <ParentList
+                      students={filteredStudents}
+                      selectedId={selectedContact?.id ?? null}
+                      onSelect={handleSelectStudent}
+                      loading={loadingStudents}
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
-            {/* Right: Thread or empty state */}
-            <div className="flex flex-col">
-              {selectedStudent ? (
+            {/* Right Panel: Thread chat hoặc Empty state */}
+            <div className="flex flex-col h-full min-h-0 overflow-hidden bg-white">
+              {selectedContact ? (
                 <ConversationThread
-                  student={selectedStudent}
+                  contact={selectedContact}
                   messages={thread}
                   loadingThread={loadingThread}
                   onSendMessage={handleSendChatMessage}
                   isSendingMsg={isSendingMsg}
+                  isParent={isParent}
+                  isBGH={isBGH}
+                  onSwitchBghChannel={handleSwitchBghChannel}
                 />
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center py-16 text-[#94a3b8] px-6 text-center">
-                  <span className="material-symbols-outlined text-[52px] mb-3" aria-hidden="true">forum</span>
-                  <p className="text-body-md font-medium text-[#475569]">Chọn phụ huynh để xem cuộc trò chuyện</p>
-                  <p className="text-body-sm mt-1">Danh sách phụ huynh học sinh hiển thị bên trái.</p>
+                  <span className="material-symbols-outlined text-[52px] mb-3 text-[#cbd5e1]" aria-hidden="true">forum</span>
+                  <p className="text-body-md font-semibold text-[#475569]">Chọn người để bắt đầu trò chuyện</p>
+                  <p className="text-body-sm mt-1 max-w-sm">
+                    {isParent
+                      ? 'Chọn Ban Giám hiệu hoặc Giáo viên chủ nhiệm từ danh sách bên trái để gửi tin nhắn trao đổi.'
+                      : 'Chọn phụ huynh học sinh từ danh sách bên trái để xem lịch sử và trao đổi trực tiếp.'}
+                  </p>
                 </div>
               )}
             </div>
+
           </div>
         </div>
       )}
+
     </div>
   );
 }

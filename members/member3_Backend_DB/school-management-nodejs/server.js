@@ -148,6 +148,7 @@ app.get('/api/settings/permissions', authenticateToken, SettingsController.getPe
 app.put('/api/settings/permissions', authenticateToken, requireBGH, SettingsController.savePermissions);
 
 // Communication Routes (Sổ liên lạc)
+app.get('/api/communication/contacts',     authenticateToken, CommunicationController.getContacts);
 app.get('/api/communication/page-data',    authenticateToken, CommunicationController.getPageData);
 app.get('/api/communication/students',     authenticateToken, CommunicationController.getStudents);
 app.get('/api/communication/messages',     authenticateToken, CommunicationController.getThread);

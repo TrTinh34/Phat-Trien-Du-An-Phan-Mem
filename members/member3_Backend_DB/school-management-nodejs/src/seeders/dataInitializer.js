@@ -93,6 +93,15 @@ export async function seedDemoData() {
       await TuitionRepository.save({ studentCode: 'HS002', studentName: 'Trần Văn Bảo', className: '10A1', semester: 'HK1', schoolYear: '2024-2025', amountDue: 1500000, amountPaid: 0, status: 'UNPAID', receiptNo: null });
     }
 
+    // 9. Parent-Students Link
+    await querySafe(`
+      INSERT INTO parent_students (parent_user_id, student_code, relationship)
+      SELECT u.id, 'HS001', 'Mẹ'
+      FROM users u
+      WHERE u.username = 'ph.hs0001'
+      ON CONFLICT (parent_user_id, student_code) DO NOTHING
+    `);
+
     console.log('[SEEDER] Initial demo data seeded successfully.');
   } catch (err) {
     console.warn('[SEEDER WARNING] Seeder skipped - DB may be unavailable:', err.message);

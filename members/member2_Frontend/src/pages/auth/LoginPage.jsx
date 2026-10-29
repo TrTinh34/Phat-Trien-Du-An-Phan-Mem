@@ -235,7 +235,7 @@ export default function LoginPage() {
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold text-slate-700">Chọn vai trò đăng nhập:</span>
-              <span className="text-slate-500 text-[11px] font-medium">{activeConfig.avatarTitle}</span>
+              {/* <span className="text-slate-500 text-[11px] font-medium">{activeConfig.avatarTitle}</span> */}
             </div>
 
             <div className="grid grid-cols-5 gap-1.5 p-1.5 bg-slate-100 rounded-xl border border-slate-200/80">

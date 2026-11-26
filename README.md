@@ -15,7 +15,7 @@ CƠ CHẾ ĐỒNG BỘ: DUAL-REMOTE PUSH (1 LỆNH PUSH CẬP NHẬT CẢ GITHUB
 BẢNG JIRA KANBAN BOARD: https://reputyze-team-vx3aseym.atlassian.net/jira/software/projects/KAN/boards/2
 KHÔNG GIAN DỰ ÁN CLICKUP: https://app.clickup.com/1100320000025585/v/s/1100320000109903
 BẢN SLIDE TRỰC TUYẾN CANVA: https://www.canva.com/d/75iOEEpReWqgOuN
-THỜI ĐIỂM TIẾN ĐỘ HIỆN TẠI: 12/11/2026 (TUẦN 8-9 / 15 TUẦN HỌC PHẦN - QA TESTING 100% PASS)
+THỜI ĐIỂM TIẾN ĐỘ HIỆN TẠI: 25/11/2026 (TUẦN 11 / 15 TUẦN HỌC PHẦN - KIỂM TOÁN TOÀN DIỆN 10 HẠN CHẾ & LẬP LỘ TRÌNH PBI-31 ĐẾN PBI-36, VÁ BẢO MẬT P0 ROUTE `server.js` & VALIDATION BIÊN ĐIỂM 0-10 TẦNG SERVICE, ĐỒNG BỘ CLICKUP/JIRA CSV, TOÀN BỘ TEST SUITES PASS 100%)
 ================================================================================
 ```
 
@@ -33,10 +33,19 @@ THỜI ĐIỂM TIẾN ĐỘ HIỆN TẠI: 12/11/2026 (TUẦN 8-9 / 15 TUẦN H�
   - **Bitbucket**: [https://bitbucket.org/codyisme27205/pt_da_pm](https://bitbucket.org/codyisme27205/pt_da_pm)
 - **Mô hình quản trị dự án**: Agile / Scrum kết hợp Jira Kanban Board & ClickUp Workspace
 - **Nền tảng Quản trị & Trình chiếu Trực tuyến**:
+  - **Bản Tổng Quan Toàn Bộ Hệ Thống Dành Cho Leader**: [docs/TONG_QUAN_TOAN_BO_HE_THONG_CHO_LEADER.md](docs/TONG_QUAN_TOAN_BO_HE_THONG_CHO_LEADER.md)
+  - **Bản Đồ Chi Tiết 27 Tasks (Jira / ClickUp / Code / Function Mapping)**: [docs/BANG_CHI_TIET_27_TASKS_JIRA_CLICKUP_CODE_MAP.md](docs/BANG_CHI_TIET_27_TASKS_JIRA_CLICKUP_CODE_MAP.md)
+  - **Cẩm nang Kết Nối Plugin, Extension & Nền Tảng Đám Mây**: [docs/HUONG_DAN_KET_NOI_PLUGIN_VA_EXTENSION.md](docs/HUONG_DAN_KET_NOI_PLUGIN_VA_EXTENSION.md)
+  - **Cẩm nang Kiểm thử API bằng Thunder Client (⚡ Trong IDE)**: [docs/HUONG_DAN_THUNDER_CLIENT.md](docs/HUONG_DAN_THUNDER_CLIENT.md)
   - **Cẩm nang Lập trình & Sửa mã nguồn (Developer Handbook)**: [docs/HUONG_DAN_LAP_TRINH_VA_SUA_CODE.md](docs/HUONG_DAN_LAP_TRINH_VA_SUA_CODE.md)
   - **Jira Cloud (Kanban Board 2)**: [https://reputyze-team-vx3aseym.atlassian.net/jira/software/projects/KAN/boards/2](https://reputyze-team-vx3aseym.atlassian.net/jira/software/projects/KAN/boards/2)
   - **ClickUp Workspace (Group 2_PTDAPM)**: [https://app.clickup.com/1100320000025585/v/s/1100320000109903](https://app.clickup.com/1100320000025585/v/s/1100320000109903)
   - **Slide Báo Cáo Đồ Án (Canva)**: [https://www.canva.com/d/75iOEEpReWqgOuN](https://www.canva.com/d/75iOEEpReWqgOuN)
+  - **Hệ Thống Trực Tuyến Đã Triển Khai (Cloud Production Deployment)**:
+    - **Cổng Giao Diện Người Dùng (Frontend SPA Vercel)**: [https://htqllh-frontend.vercel.app](https://htqllh-frontend.vercel.app)
+    - **Cổng Giao Tiếp API Máy Chủ (Backend RESTful API Vercel)**: [https://htqllh-backend.vercel.app](https://htqllh-backend.vercel.app)
+    - **Kiểm tra Sức Khỏe Dịch vụ Đám mây (Health Check)**: [https://htqllh-backend.vercel.app/api/health](https://htqllh-backend.vercel.app/api/health)
+    - **Cơ sở Dữ liệu Đám mây (Neon PostgreSQL Serverless)**: `ep-wispy-rain-be6an41h-pooler.c-9.us-east-2.aws.neon.tech` (AWS Ohio us-east-2)
 
 ---
 
@@ -109,8 +118,8 @@ THỜI ĐIỂM TIẾN ĐỘ HIỆN TẠI: 12/11/2026 (TUẦN 8-9 / 15 TUẦN H�
 - [BrainStorm/Week7.md](BrainStorm/Week7.md) & [BrainStorm/Week7 Authentication Authorization .md](BrainStorm/Week7%20Authentication%20Authorization%20.md): Tuần 7 - Chuyên đề Xác thực & Bảo mật (JWT, RBAC 5 Roles, 1-Click Demo Login). *(Đã hoàn thành xuất sắc)*
 - [BrainStorm/Week8.md](BrainStorm/Week8.md) & [BrainStorm/Week8 Logging .md](BrainStorm/Week8%20Logging%20.md): Tuần 8 - Chuyên đề Nhật ký Hệ thống (Centralized Audit Logging), Đồng bộ Dual-Remote (GitHub & Bitbucket), Tái cấu trúc Menu Nhóm & Nạp dữ liệu mẫu 100%. *(Đã hoàn thành xuất sắc)*
 - [BrainStorm/Week9.md](BrainStorm/Week9.md) & [BrainStorm/Week9 Testing .md](BrainStorm/Week9%20Testing%20.md): Tuần 9 - Chuyên đề Kiểm thử Phần mềm (Automated QA Unit Test Suite 68/68 Backend & 13/13 Frontend Vitest đạt 100% PASS), Đồng bộ Jira & ClickUp, Canva Slide & Cẩm nang PostgreSQL Extension. *(Đã hoàn thành xuất sắc)*
-- [BrainStorm/Week10.md](BrainStorm/Week10.md): Tuần 10 - Tích hợp Toàn Hệ Thống, Kiểm thử Bảo mật & Phòng thủ Lỗ hổng OWASP Top 10 (Security Hardening, Rate Limiting, Helmet Headers, Chống SQLi & BOLA). *(Đang triển khai - In Progress)*
-- [BrainStorm/Week11.md](BrainStorm/Week11.md): Tuần 11 - Tối ưu hóa Hiệu năng, Indexing CSDL PostgreSQL & Caching Redis (Cache-Aside).
+- [BrainStorm/Week10.md](BrainStorm/Week10.md): Tuần 10 - Tích hợp Toàn Hệ Thống, Kiểm thử Bảo mật & Phòng thủ Lỗ hổng OWASP Top 10 (Security Hardening, Rate Limiting, Helmet Headers, Chống SQLi & BOLA, 400/400 Tests PASS 100%). *(Đã hoàn thành xuất sắc)*
+- [BrainStorm/Week11.md](BrainStorm/Week11.md): Tuần 11 - Tối ưu hóa Hiệu năng, Đóng học phí VietQR Phụ huynh, Kiểm toán RBAC 5 Roles, Cổng đăng nhập Enterprise SSO, Triển khai Vercel Live & Neon DB 100% dữ liệu. *(Đã hoàn thành xuất sắc)*
 - [BrainStorm/Week12.md](BrainStorm/Week12.md): Tuần 12 - Đóng gói Docker, Docker Compose & Tự động hóa CI/CD GitHub Actions.
 - [BrainStorm/Week13.md](BrainStorm/Week13.md): Tuần 13 - Báo cáo Thẩm định Kỹ thuật & Nghiệm thu Người dùng UAT Toàn diện (43 Use Cases).
 - [BrainStorm/Week14.md](BrainStorm/Week14.md): Tuần 14 - Đóng gói Bản phát hành Release v1.0.0 & Cẩm nang Hướng dẫn Sử dụng.
@@ -170,11 +179,12 @@ THỜI ĐIỂM TIẾN ĐỘ HIỆN TẠI: 12/11/2026 (TUẦN 8-9 / 15 TUẦN H�
   git push origin main
   ```
 - **Branch chính**: `main`
-- **Bảng Jira Cloud Kanban Board**: [https://reputyze-team-vx3aseym.atlassian.net/jira/software/projects/KAN/boards/2](https://reputyze-team-vx3aseym.atlassian.net/jira/software/projects/KAN/boards/2)
-- **Dự Án Jira Cloud Project**: [https://reputyze-team-vx3aseym.atlassian.net/jira/software/projects/KAN](https://reputyze-team-vx3aseym.atlassian.net/jira/software/projects/KAN)
-- **Không Gian Dự Án ClickUp (Space Group 2_PTDAPM)**: [https://app.clickup.com/1100320000025585/v/s/1100320000109903](https://app.clickup.com/1100320000025585/v/s/1100320000109903)
-- **Thư Mục Dự Án ClickUp (Folder HTQLLH)**: [https://app.clickup.com/1100320000025585/v/f/1100320000138169](https://app.clickup.com/1100320000025585/v/f/1100320000138169)
-- **Cẩm nang Ánh xạ Jira, ClickUp & GitHub**: [docs/JIRA_KANBAN_MAPPING.md](docs/JIRA_KANBAN_MAPPING.md)
+- **Bộ 3 Công Cụ Quản Lý Dự Án Chuẩn Agile / Scrum (Đồng bộ 30 PBIs - 150 Story Points)**:
+  1. **Trello Kanban Board**: [https://trello.com/b/gkdRNT57/htqllh-h%E1%BB%87-th%E1%BB%91ng-qu%E1%BA%A3n-l%C3%BD-l%E1%BB%9Bp-h%E1%BB%8Dc-h%E1%BB%8Dc-v%E1%BB%A5-edumanage-pro](https://trello.com/b/gkdRNT57/htqllh-h%E1%BB%87-th%E1%BB%91ng-qu%E1%BA%A3n-l%C3%BD-l%E1%BB%9Bp-h%E1%BB%8Dc-h%E1%BB%8Dc-v%E1%BB%A5-edumanage-pro) (30/30 thẻ PBI hoàn thành 100% trong cột `✅ Done / Released`).
+  2. **Jira Cloud Kanban Board**: [https://reputyze-team-vx3aseym.atlassian.net/jira/software/projects/KAN/boards/2](https://reputyze-team-vx3aseym.atlassian.net/jira/software/projects/KAN/boards/2) (Dự án: [KAN](https://reputyze-team-vx3aseym.atlassian.net/jira/software/projects/KAN)).
+  3. **Không Gian ClickUp Workspace**: [Space Group 2_PTDAPM](https://app.clickup.com/1100320000025585/v/s/1100320000109903) & [Folder HTQLLH](https://app.clickup.com/1100320000025585/v/f/1100320000138169).
+- **Cẩm nang Ánh xạ Jira, ClickUp, Trello & GitHub**: [docs/JIRA_KANBAN_MAPPING.md](docs/JIRA_KANBAN_MAPPING.md)
+- **Cẩm nang Hướng dẫn Kết nối Plugin & Extension**: [docs/HUONG_DAN_KET_NOI_PLUGIN_VA_EXTENSION.md](docs/HUONG_DAN_KET_NOI_PLUGIN_VA_EXTENSION.md)
 - **Bản Slide Trình Chiếu Trực Tuyến Trên Canva**: [https://www.canva.com/d/75iOEEpReWqgOuN](https://www.canva.com/d/75iOEEpReWqgOuN)
 
 ---
@@ -183,6 +193,16 @@ THỜI ĐIỂM TIẾN ĐỘ HIỆN TẠI: 12/11/2026 (TUẦN 8-9 / 15 TUẦN H�
 
 ### 7.1 Cách Khởi Chạy Hệ Thống
 
+#### Cách 1: Khởi Chạy 1-Click Toàn Hệ Thống Bằng Docker Compose (Khuyến nghị)
+Chỉ với 1 câu lệnh duy nhất để build và khởi chạy đồng thời cả 3 phân tầng hệ thống:
+```bash
+docker compose up -d --build
+```
+- **Frontend SPA (Nginx Alpine)**: `http://localhost:5173` (Tối ưu hóa Code-Splitting, bundle khởi tạo siêu nhẹ chỉ 37 KB).
+- **Backend API (Node.js Clean Architecture)**: `http://localhost:8081` (HealthCheck: `http://localhost:8081/api/health`).
+- **Cơ sở dữ liệu (PostgreSQL 16)**: `localhost:5434` (Database: `school_management`).
+
+#### Cách 2: Khởi Chạy Từng Phân Hệ Bằng Terminal Môi Trường Phát Triển (Dev Mode)
 1. **Bước 1: Khởi động Cơ sở Dữ liệu PostgreSQL (Docker)**:
    ```bash
    docker start htqllh_postgres

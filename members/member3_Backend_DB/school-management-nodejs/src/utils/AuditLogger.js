@@ -12,6 +12,8 @@
  * ==============================================================================
  */
 
+import { querySafe } from '../config/db.js';
+
 // Bộ nhớ nhật ký kiểm toán trong phiên làm việc
 const auditLogs = [];
 
@@ -20,19 +22,33 @@ const auditLogs = [];
  */
 export class AuditLogger {
   /**
-   * Ghi nhận một sự kiện kiểm toán mới
-   * @param {Object} entry - Dữ liệu sự kiện
-   * @param {string} entry.action - Hành động thực hiện (ví dụ: 'UPDATE_GRADE', 'LOCK_GRADEBOOK', 'APPROVE_LEAVE')
-   * @param {string} entry.user - Tên tài khoản người thực hiện
-   * @param {string} entry.role - Vai trò của người thực hiện (BGH, GVCN, GV)
-   * @param {string} entry.entity - Tên thực thể bị tác động (ví dụ: 'grade_books', 'leave_requests')
-   * @param {number|string} entry.entityId - ID của bản ghi bị tác động
-   * @param {any} [entry.previousValue] - Giá trị cũ trước khi sửa (ví dụ: điểm cũ là 7.0)
-   * @param {any} [entry.newValue] - Giá trị mới sau khi sửa (ví dụ: điểm mới là 8.5)
-   * @param {string} [entry.ipAddress='127.0.0.1'] - Địa chỉ IP máy trạm yêu cầu
+   * Ghi nhận một sự kiện kiểm toán mới (Hỗ trợ cả định dạng Object hoặc các tham số rời)
+   * @param {Object|string} entryOrUser - Dữ liệu sự kiện dạng Object hoặc đối tượng người dùng
+   * @param {string} [actionArg] - Hành động thực hiện (nếu truyền dạng tham số rời)
+   * @param {string} [entityArg] - Tên thực thể bị tác động (nếu truyền dạng tham số rời)
+   * @param {number|string} [entityIdArg] - ID thực thể bị tác động
+   * @param {Object} [extraArg={}] - Thông tin bổ sung / giá trị mới
    * @returns {Object} Bản ghi kiểm toán vừa tạo
    */
-  static log({ action, user, role, entity, entityId, previousValue, newValue, ipAddress }) {
+  static log(entryOrUser, actionArg, entityArg, entityIdArg, extraArg = {}) {
+    let action, user, role, entity, entityId, previousValue, newValue, ipAddress;
+
+    if (entryOrUser && typeof entryOrUser === 'object' && entryOrUser.action) {
+      // Kiểu 1: Truyền đối tượng cấu hình { action, user, role, entity, entityId, previousValue, newValue, ipAddress }
+      ({ action, user, role, entity, entityId, previousValue, newValue, ipAddress } = entryOrUser);
+    } else {
+      // Kiểu 2: Truyền tham số rời (userObj, action, entity, entityId, extra)
+      const userObj = entryOrUser || {};
+      user = userObj.username || userObj.user || userObj.name || 'system';
+      role = userObj.role || 'SYSTEM';
+      action = actionArg || 'UNKNOWN_ACTION';
+      entity = entityArg || 'general';
+      entityId = entityIdArg ?? 'N/A';
+      newValue = extraArg.newValue !== undefined ? extraArg.newValue : extraArg;
+      previousValue = extraArg.previousValue || null;
+      ipAddress = extraArg.ipAddress || userObj.ipAddress || '127.0.0.1';
+    }
+
     const logEntry = {
       id: auditLogs.length + 1,
       timestamp: new Date().toISOString(), // Dấu thời gian ISO 8601 chuẩn quốc tế
@@ -48,6 +64,25 @@ export class AuditLogger {
 
     auditLogs.push(logEntry);
     console.log(`[AUDIT LOG] [${logEntry.timestamp}] Người dùng "${user}" (${role}) thực hiện "${action}" trên ${entity} #${entityId}`);
+
+    // Bất đồng bộ ghi nhận vào bảng audit_logs trong PostgreSQL để lưu trữ vĩnh viễn (Append-Only)
+    querySafe(`
+      INSERT INTO audit_logs (timestamp, action, username, role, entity, entity_id, previous_value, new_value, ip_address)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `, [
+      logEntry.timestamp,
+      action,
+      user,
+      role,
+      entity,
+      String(entityId),
+      previousValue !== null ? JSON.stringify(previousValue) : null,
+      newValue !== null ? JSON.stringify(newValue) : null,
+      ipAddress
+    ]).catch(() => {
+      // Bỏ qua lỗi kết nối khi DB ở chế độ in-memory offline
+    });
+
     return logEntry;
   }
 
@@ -63,5 +98,22 @@ export class AuditLogger {
     if (filter.entity) result = result.filter(l => l.entity === filter.entity);
     if (filter.user) result = result.filter(l => l.user === filter.user);
     return result;
+  }
+
+  /**
+   * Truy vấn nhật ký kiểm toán từ PostgreSQL (Table 18) có fallback sang mảng bộ nhớ
+   * @param {Object} [filter={}] - Bộ lọc
+   * @returns {Promise<Array<Object>>}
+   */
+  static async getAuditLogsFromDB(filter = {}) {
+    try {
+      const res = await querySafe('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 100');
+      if (res && res.rows && res.rows.length > 0) {
+        return res.rows;
+      }
+    } catch {
+      // Fallback khi DB offline
+    }
+    return this.getAuditLogs(filter);
   }
 }
